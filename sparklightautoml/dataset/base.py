@@ -1,5 +1,7 @@
 import functools
 import logging
+import os
+import pickle
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -29,7 +31,7 @@ from pyspark.sql.session import SparkSession
 
 from sparklightautoml import VALIDATION_COLUMN
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
-from sparklightautoml.utils import SparkDataFrame
+from sparklightautoml.utils import SparkDataFrame, create_directory
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,22 @@ class SparkDataset(LAMLDataset, Unpersistable):
     _dataset_type = "SparkDataset"
 
     ID_COLUMN = "_id"
+
+    @classmethod
+    def load(cls,
+             path: str,
+             file_format: str = 'parquet',
+             options: Optional[Dict[str, Any]] = None,
+             persistence_manager: Optional['PersistenceManager'] = None) -> 'SparkDataset':
+        options = options or dict()
+        spark = SparkSession.getActiveSession()
+
+        metadata_df = spark.read.format(file_format).options(**options).load(path)
+        data_df = spark.read.format(file_format).options(**options).load(path)
+
+        metadata = pickle.loads(metadata_df.select('metadata').first().asDict()['metadata'])
+
+        return SparkDataset(data=data_df, persistence_manager=persistence_manager, **metadata)
 
     # TODO: SLAMA - implement filling dependencies
     @classmethod
@@ -489,6 +507,31 @@ class SparkDataset(LAMLDataset, Unpersistable):
         ds = self.empty()
         ds.set_data(self.data, self.features, self.roles, frozen=True)
         return ds
+
+    def save(self, path: str, save_mode: str = 'error', file_format: str = 'parquet', options: Optional[Dict[str, Any]] = None):
+        metadata_file_path = os.path.join(path, f"metadata.{file_format}")
+        file_path = os.path.join(path, f"data.{file_format}")
+        options = options or dict()
+
+        # prepare metadata of the dataset
+        metadata = {
+            "name": self.name,
+            "features": self.features,
+            "roles": self.roles,
+            "task": self.task,
+            "target_column": self.target_column,
+            "folds_column": self.folds_column,
+            "service_columns": self.service_columns
+        }
+        metadata_str = pickle.dumps(metadata)
+        metadata_df = self.spark_session.createDataFrame([{"metadata": metadata_str}])
+
+        # create directory that will store data and metadata as separate files of dataframes
+        create_directory(path, spark=self.spark_session, exists_ok=(save_mode in ['overwrite', 'append']))
+
+        # writing dataframes
+        metadata_df.write.format(file_format).mode(save_mode).options(**options).save(metadata_file_path)
+        self.data.write.format(file_format).mode(save_mode).options(**options).save(file_path)
 
     def to_pandas(self) -> PandasDataset:
         data, target_data, folds_data, roles = self._materialize_to_pandas()
