@@ -84,11 +84,13 @@ class SparkDataset(LAMLDataset, Unpersistable):
              file_format: str = 'parquet',
              options: Optional[Dict[str, Any]] = None,
              persistence_manager: Optional['PersistenceManager'] = None) -> 'SparkDataset':
+        metadata_file_path = os.path.join(path, f"metadata.{file_format}")
+        file_path = os.path.join(path, f"data.{file_format}")
         options = options or dict()
         spark = SparkSession.getActiveSession()
 
-        metadata_df = spark.read.format(file_format).options(**options).load(path)
-        data_df = spark.read.format(file_format).options(**options).load(path)
+        metadata_df = spark.read.format(file_format).options(**options).load(metadata_file_path)
+        data_df = spark.read.format(file_format).options(**options).load(file_path)
 
         metadata = pickle.loads(metadata_df.select('metadata').first().asDict()['metadata'])
 
@@ -153,7 +155,7 @@ class SparkDataset(LAMLDataset, Unpersistable):
                  name: Optional[str] = None,
                  **kwargs: Any):
 
-        if "target" in kwargs:
+        if "target" in kwargs and kwargs["target"] is not None:
             assert isinstance(kwargs["target"], str), "Target should be a str representing column name"
             self._target_column: str = kwargs["target"]
         else:
@@ -516,12 +518,11 @@ class SparkDataset(LAMLDataset, Unpersistable):
         # prepare metadata of the dataset
         metadata = {
             "name": self.name,
-            "features": self.features,
             "roles": self.roles,
             "task": self.task,
-            "target_column": self.target_column,
-            "folds_column": self.folds_column,
-            "service_columns": self.service_columns
+            "target": self.target_column,
+            "folds": self.folds_column,
+            # "service_columns": self.service_columns
         }
         metadata_str = pickle.dumps(metadata)
         metadata_df = self.spark_session.createDataFrame([{"metadata": metadata_str}])
