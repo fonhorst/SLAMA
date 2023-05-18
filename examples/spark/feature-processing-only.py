@@ -17,7 +17,7 @@ if __name__ == "__main__":
 
     # settings and data
     cv = 5
-    feat_pipe = "linear"  # linear, lgb_simple or lgb_adv
+    feat_pipe = "lgb_adv"  # linear, lgb_simple or lgb_adv
     dataset_name = "lama_test_dataset"
     path, task_type, roles, dtype = get_dataset_attrs(dataset_name)
     df = spark.read.csv(path, header=True)
@@ -31,9 +31,5 @@ if __name__ == "__main__":
     ds = reader.fit_read(train_data=df, roles=roles)
     ds = feature_pipe.fit_transform(ds)
 
-    # Add method save/load method
-    # TODO: fix the error
-    #  pyspark.sql.utils.AnalysisException:
-    #  Column name "scaler__fillnamed__fillinf__logodds__oof__inter__(CODE_GENDER__EMERGENCYSTATE_MODE)"
-    #  contains invalid character(s). Please use alias to rename it.
-    ds.data.write.parquet(f"{dataset_name}_features.parquet")
+    # save processed data
+    ds.save(f"/tmp/{dataset_name}__{feat_pipe}__features.dataset")
