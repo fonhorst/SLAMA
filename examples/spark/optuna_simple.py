@@ -1,3 +1,5 @@
+import logging
+from logging import config
 from typing import Tuple, Union, Callable
 
 import optuna
@@ -9,7 +11,26 @@ from pyspark.sql import functions as sf
 from examples.spark.examples_utils import get_spark_session
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
+from sparklightautoml.utils import logging_config, VERBOSE_LOGGING_FORMAT
 from sparklightautoml.validation.iterators import SparkHoldoutIterator
+
+
+logging.config.dictConfig(logging_config(level=logging.DEBUG, log_filename='/tmp/slama.log'))
+logging.basicConfig(level=logging.DEBUG, format=VERBOSE_LOGGING_FORMAT)
+logger = logging.getLogger(__name__)
+
+
+class ProgressReportingOptunaTuner(OptunaTuner):
+    def _get_objective(self, ml_algo: TunableAlgo, estimated_n_trials: int, train_valid_iterator: TrainValidIterator) \
+            -> Callable[[optuna.trial.Trial], Union[float, int]]:
+        obj_func = super()._get_objective(ml_algo, estimated_n_trials, train_valid_iterator)
+
+        def func(*args, **kwargs):
+            obj_score = obj_func(*args, **kwargs)
+            logger.info(f"Objective score: {obj_score}")
+            return obj_score
+
+        return func
 
 
 def train_test_split(dataset: SparkDataset, test_slice_or_fold_num: Union[float, int] = 0.2) \
@@ -39,7 +60,7 @@ if __name__ == "__main__":
 
     # create main entities
     iterator = SparkHoldoutIterator(train_ds)
-    tuner = OptunaTuner(n_trials=10, timeout=300)
+    tuner = ProgressReportingOptunaTuner(n_trials=10, timeout=300)
     ml_algo = SparkBoostLGBM()
     score = ds.task.get_dataset_metric()
 
