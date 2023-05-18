@@ -2,15 +2,15 @@ import os
 import shutil
 from typing import Optional
 
+import numpy as np
 from lightautoml.dataset.roles import NumericRole
 from lightautoml.tasks import Task
+from pandas.testing import assert_frame_equal
 from pyspark.sql import SparkSession
 
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.tasks.base import SparkTask
 from . import spark as spark_sess
-import numpy as np
-from pandas.testing import assert_frame_equal
 
 spark = spark_sess
 
@@ -42,12 +42,23 @@ def test_spark_dataset_save_load(spark: SparkSession):
     df = spark.createDataFrame([{
         SparkDataset.ID_COLUMN: i,
         "a": i + 1,
-        "b": i * 10 + 1
+        "b": i * 10 + 1,
+        "this_is_target": 0,
+        "this_is_fold": 0,
+        "scaler__fillnamed__fillinf__logodds__oof__inter__(CODE_GENDER__EMERGENCYSTATE_MODE)": 12.0
     } for i in range(10)])
 
-    ds = SparkDataset(data=df,
-                      task=SparkTask("reg"),
-                      roles={"a": NumericRole(dtype=np.int32), "b": NumericRole(dtype=np.int32)})
+    ds = SparkDataset(
+        data=df,
+        task=SparkTask("reg"),
+        target="this_is_target",
+        folds="this_is_fold",
+        roles={
+            "a": NumericRole(dtype=np.int32),
+            "b": NumericRole(dtype=np.int32),
+            "scaler__fillnamed__fillinf__logodds__oof__inter__(CODE_GENDER__EMERGENCYSTATE_MODE)": NumericRole()
+        }
+    )
 
     ds.save(path=path)
     loaded_ds = SparkDataset.load(path=path)

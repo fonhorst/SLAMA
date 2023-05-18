@@ -89,10 +89,14 @@ class SparkDataset(LAMLDataset, Unpersistable):
         options = options or dict()
         spark = SparkSession.getActiveSession()
 
+        # reading metadata
         metadata_df = spark.read.format(file_format).options(**options).load(metadata_file_path)
-        data_df = spark.read.format(file_format).options(**options).load(file_path)
-
         metadata = pickle.loads(metadata_df.select('metadata').first().asDict()['metadata'])
+
+        # reading data
+        data_df = spark.read.format(file_format).options(**options).load(file_path)
+        name_fixed_cols = (sf.col(c).alias(c.replace('[', '(').replace(']', ')')) for c in data_df.columns)
+        data_df = data_df.select(*name_fixed_cols)
 
         return SparkDataset(data=data_df, persistence_manager=persistence_manager, **metadata)
 
@@ -517,7 +521,9 @@ class SparkDataset(LAMLDataset, Unpersistable):
 
         # writing dataframes
         metadata_df.write.format(file_format).mode(save_mode).options(**options).save(metadata_file_path)
-        self.data.write.format(file_format).mode(save_mode).options(**options).save(file_path)
+        # fix name of columns: parquet cannot have columns with '(' or ')' in the name
+        name_fixed_cols = (sf.col(c).alias(c.replace('(', '[').replace(')', ']')) for c in self.data.columns)
+        self.data.select(*name_fixed_cols).write.format(file_format).mode(save_mode).options(**options).save(file_path)
 
     def to_pandas(self) -> PandasDataset:
         data, target_data, folds_data, roles = self._materialize_to_pandas()
