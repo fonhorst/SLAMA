@@ -1,7 +1,9 @@
-from typing import Tuple, Union
+from typing import Tuple, Union, Callable
 
-from lightautoml.ml_algo.tuning.optuna import OptunaTuner
+import optuna
+from lightautoml.ml_algo.tuning.optuna import OptunaTuner, TunableAlgo
 from lightautoml.ml_algo.utils import tune_and_fit_predict
+from lightautoml.validation.base import TrainValidIterator
 from pyspark.sql import functions as sf
 
 from examples.spark.examples_utils import get_spark_session
@@ -45,6 +47,9 @@ if __name__ == "__main__":
     model, oof_preds = tune_and_fit_predict(ml_algo, tuner, iterator)
     test_preds = ml_algo.predict(test_ds)
 
+    #TODO: report trials
+    # tuner.study.trials
+
     # estimate oof and test metrics
     oof_metric_value = score(oof_preds.select(
         SparkDataset.ID_COLUMN,
@@ -52,12 +57,11 @@ if __name__ == "__main__":
         sf.col(ml_algo.prediction_feature).alias('prediction')
     ))
 
-    print(f"OOF metric: {oof_metric_value}")
-
     test_metric_value = score(test_preds.select(
         SparkDataset.ID_COLUMN,
         sf.col(ds.target_column).alias('target'),
         sf.col(ml_algo.prediction_feature).alias('prediction')
     ))
 
+    print(f"OOF metric: {oof_metric_value}")
     print(f"Test metric: {oof_metric_value}")
