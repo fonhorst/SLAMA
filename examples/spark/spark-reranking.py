@@ -38,15 +38,15 @@ def main(spark: SparkSession, dataset_name: str, seed: int):
     task_type = 'binary'
     roles = {"target": "target"}
 
-
     persistence_manager = get_persistence_manager()
+
     # Alternative ways to define persistence_manager
     # persistence_manager = get_persistence_manager("CompositePlainCachePersistenceManager")
     # persistence_manager = CompositePlainCachePersistenceManager(bucket_nums=BUCKET_NUMS)
 
     with log_exec_timer("spark-lama training") as train_timer:
         task = SparkTask(task_type)
-        train_data, test_data = prepare_test_and_train(spark, path, seed, is_csv=False)
+        train_data, test_data = prepare_test_and_train(spark, path, seed, file_format='parquet')
 
         train_data = train_data.drop("user_idx", "item_idx")
         test_data_dropped = test_data
