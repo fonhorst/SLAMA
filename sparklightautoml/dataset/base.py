@@ -224,11 +224,12 @@ class SparkDataset(LAMLDataset, Unpersistable):
 
     @features.setter
     def features(self, val: List[str]):
-        """Ignore setting features.
+        """
+            Set features available in this dataset.
+            Columns won't be deleted from the dataframe but won't appear throught features property.
 
-        Args:
-            val: ignored.
-
+            Args:
+                val: list of feature names.
         """
         diff = set(val).difference(self.data.columns)
         assert len(diff) == 0, f"Not all roles have features in the dataset. Absent features: {diff}."
