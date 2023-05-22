@@ -579,7 +579,11 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
                         # TODO: PARALLEL - no stopping of time_limit_exceeded
 
                         with allocator.allocate() as slot:
+                            prev_train = train_valid_iterator.train
+                            train_valid_iterator.train = None
                             tviter = deepcopy(train_valid_iterator)
+                            train_valid_iterator.train = prev_train
+
                             tviter.train = slot.dataset
                             for _ in range(i + 1):
                                 slot_train = next(tviter)

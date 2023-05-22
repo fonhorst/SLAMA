@@ -32,4 +32,4 @@ if __name__ == "__main__":
     ds = feature_pipe.fit_transform(ds)
 
     # save processed data
-    ds.save(f"/tmp/{dataset_name}__{feat_pipe}__features.dataset")
+    ds.save(f"/tmp/{dataset_name}__{feat_pipe}__features.dataset", save_mode='overwrite')

@@ -2,6 +2,7 @@ import logging
 import math
 import multiprocessing
 import threading
+import time
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -55,8 +56,9 @@ def get_pool(pool_type: PoolType) -> Optional[ThreadPool]:
 
 # noinspection PyUnresolvedReferences
 def get_executors() -> List[str]:
+    master_addr = SparkSession.getActiveSession().conf.get("spark.master")
     sc = SparkContext._active_spark_context
-    return sc._jvm.org.apache.spark.lightautoml.utils.SomeFunctions.get_executors()
+    return sc._jvm.org.apache.spark.lightautoml.utils.SomeFunctions.executors()
 
 
 def get_executors_cores() -> int:
@@ -164,6 +166,7 @@ class SlotAllocator(ABC):
 
 class ParallelSlotAllocator(SlotAllocator):
     def __init__(self, slot_size: SlotSize, slots: List[DatasetSlot], pool: ThreadPool):
+        assert len(slots) > 0
         self._slot_size = slot_size
         self._slots = slots
         self._pool = pool
@@ -175,14 +178,24 @@ class ParallelSlotAllocator(SlotAllocator):
 
     @contextmanager
     def allocate(self) -> DatasetSlot:
-        with self._slots_lock:
-            free_slot = next((slot for slot in self._slots if slot.free))
-            free_slot.free = False
+        try:
+            while True:
+                try:
+                    with self._slots_lock:
+                        free_slot = next((slot for slot in self._slots if slot.free))
+                        free_slot.free = False
+                    break
+                except StopIteration:
+                    logger.debug("No empty slot, sleeping and repeating again")
+                time.sleep(5)
 
-        yield free_slot
+            yield free_slot
 
-        with self._slots_lock:
-            free_slot.free = True
+            with self._slots_lock:
+                free_slot.free = True
+        except Exception as ex:
+            logger.error("Some bad exception happened", exc_info=1)
+            raise ex
 
 
 class ComputationsManager(ABC):
@@ -232,9 +245,10 @@ class ParallelComputationsManager(ComputationsManager):
         if not pool:
             return _compute_sequential(tasks)
 
-        ptasks = map(inheritable_thread_target, tasks)
+        ptasks = list(map(inheritable_thread_target, tasks))
+        results = list(pool.imap_unordered(lambda f: f(), ptasks))
         results = sorted(
-            (result for result in pool.imap_unordered(lambda f: f(), ptasks) if result),
+            (result for result in results if result),
             key=lambda x: x[0]
         )
 
@@ -258,7 +272,7 @@ class ParallelComputationsManager(ComputationsManager):
     @staticmethod
     def _prepare_trains(dataset: SparkDataset, parallelism: int) -> Tuple[SlotSize, List[DatasetSlot]]:
         execs = get_executors()
-        exec_cores = get_executors_cores(dataset.data)
+        exec_cores = get_executors_cores()
         execs_per_slot = max(1, math.floor(len(execs) / parallelism))
         slots_num = int(len(execs) / execs_per_slot)
         slot_size = SlotSize(num_tasks=execs_per_slot * exec_cores, num_threads_per_executor=exec_cores)
