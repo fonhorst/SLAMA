@@ -43,6 +43,7 @@ if __name__ == "__main__":
 
     feat_pipe = "linear"  # linear, lgb_simple or lgb_adv
     ml_algo_name = "linear_l2" # linear_l2, lgb
+    job_parallelism = 2
     dataset_name = os.environ.get("DATASET", "lama_test_dataset")
 
     # load and prepare data
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     train_ds, test_ds = train_ds.persist(), test_ds.persist()
 
     # create main entities
-    computations_manager = ParallelComputationsManager(job_pool_size=1)
+    computations_manager = ParallelComputationsManager(job_pool_size=job_parallelism)
     iterator = SparkFoldsIterator(train_ds)#.convert_to_holdout_iterator()
     if ml_algo_name == "lgb":
         ml_algo = SparkBoostLGBM(experimental_parallel_mode=True, computations_manager=computations_manager)

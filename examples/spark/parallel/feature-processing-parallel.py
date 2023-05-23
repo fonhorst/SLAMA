@@ -1,9 +1,17 @@
+import logging.config
+
 from examples.spark.examples_utils import get_spark_session, get_dataset
 from sparklightautoml.computations.manager import ParallelComputationsManager
+from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
 from sparklightautoml.pipelines.features.lgb_pipeline import SparkLGBAdvancedPipeline, SparkLGBSimpleFeatures
 from sparklightautoml.pipelines.features.linear_pipeline import SparkLinearFeatures
 from sparklightautoml.reader.base import SparkToSparkReader
 from sparklightautoml.tasks.base import SparkTask
+from sparklightautoml.utils import logging_config, VERBOSE_LOGGING_FORMAT
+
+logging.config.dictConfig(logging_config(level=logging.DEBUG, log_filename='/tmp/slama.log'))
+logging.basicConfig(level=logging.DEBUG, format=VERBOSE_LOGGING_FORMAT)
+logger = logging.getLogger(__name__)
 
 
 feature_pipelines = {
@@ -18,19 +26,25 @@ if __name__ == "__main__":
 
     # settings and data
     cv = 5
-    feat_pipe = "linear"  # linear, lgb_simple or lgb_adv
     dataset_name = "lama_test_dataset"
+    job_parallelism = 2
+
     dataset = get_dataset(dataset_name)
     df = spark.read.csv(dataset.path, header=True)
 
+    computations_manager = ParallelComputationsManager(job_pool_size=job_parallelism)
     task = SparkTask(name=dataset.task_type)
     reader = SparkToSparkReader(task=task, cv=cv, advanced_roles=False)
-    feature_pipe = feature_pipelines.get(feat_pipe, None)
-
-    assert feature_pipe, f"Unsupported feat pipe {feat_pipe}"
 
     ds = reader.fit_read(train_data=df, roles=dataset.roles)
-    ds = feature_pipe.fit_transform(ds)
 
-    # save processed data
-    ds.save(f"/tmp/{dataset_name}__{feat_pipe}__features.dataset", save_mode='overwrite')
+    def build_task(name: str, feature_pipe: SparkFeaturesPipeline):
+        def func():
+            logger.info(f"Calculating feature pipeline: {name}")
+            feature_pipe.fit_transform(ds).data.write.mode('overwrite').format('noop').save()
+            logger.info(f"Finished calculating pipeline: {name}")
+        return func
+
+    tasks = [build_task(name, feature_pipe) for name, feature_pipe in feature_pipelines.items()]
+
+    computations_manager.compute(tasks)
