@@ -66,15 +66,13 @@ def get_executors_cores() -> int:
     if master_addr.startswith("local-cluster"):
         _, cores_str, _ = master_addr[len("local-cluster["): -1].split(",")
         cores = int(cores_str)
-        num_threads = max(cores - 1, 1)
     elif master_addr.startswith("local"):
         cores_str = master_addr[len("local["): -1]
         cores = int(cores_str) if cores_str != "*" else multiprocessing.cpu_count()
-        num_threads = max(cores - 1, 1)
     else:
-        num_threads = max(int(SparkSession.getActiveSession().conf.get("spark.executor.cores", "1")) - 1, 1)
+        cores = int(SparkSession.getActiveSession().conf.get("spark.executor.cores", "1"))
 
-    return num_threads
+    return cores
 
 
 def _compute_sequential(tasks: List[Callable[[], T]]) -> List[T]:
@@ -275,7 +273,7 @@ class ParallelComputationsManager(ComputationsManager):
         exec_cores = get_executors_cores()
         execs_per_slot = max(1, math.floor(len(execs) / parallelism))
         slots_num = int(len(execs) / execs_per_slot)
-        slot_size = SlotSize(num_tasks=execs_per_slot * exec_cores, num_threads_per_executor=exec_cores)
+        slot_size = SlotSize(num_tasks=execs_per_slot * exec_cores, num_threads_per_executor=max(exec_cores - 1, 1))
 
         if len(execs) % parallelism != 0:
             warnings.warn(f"Uneven number of executors per job. "
