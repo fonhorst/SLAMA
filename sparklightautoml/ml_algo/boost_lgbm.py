@@ -1,5 +1,4 @@
 import logging
-import multiprocessing
 import warnings
 from copy import copy, deepcopy
 from typing import Dict, Optional, Tuple, Union, cast, List
@@ -7,7 +6,6 @@ from typing import Dict, Optional, Tuple, Union, cast, List
 import lightgbm as lgb
 import pandas as pd
 import pyspark.sql.functions as sf
-from lightautoml.dataset.roles import ColumnRole
 from lightautoml.ml_algo.tuning.base import Distribution, SearchSpace
 from lightautoml.pipelines.selection.base import ImportanceEstimator
 from lightautoml.utils.timer import TaskTimer
@@ -26,7 +24,7 @@ from synapse.ml.lightgbm import (
 from synapse.ml.onnx import ONNXModel
 
 from sparklightautoml.computations.manager import PoolType, SlotAllocator, ComputationsManager
-from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
+from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo, SparkMLModel, AveragingTransformer
 from sparklightautoml.mlwriters import (
@@ -40,8 +38,6 @@ from sparklightautoml.transformers.base import (
     PredictionColsTransformer,
     ProbabilityColsTransformer,
 )
-from sparklightautoml.transformers.scala_wrappers.balanced_union_partitions_coalescer import \
-    BalancedUnionPartitionsCoalescerTransformer
 from sparklightautoml.utils import SparkDataFrame
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator, split_out_val
 
@@ -373,16 +369,16 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         if train.task.name == "reg":
             onnx_ml = (
                 onnx_ml.setDeviceType("CPU")
-                    .setFeedDict({"input": f"{self._name}_vassembler_features"})
-                    .setFetchDict({ml_model.getPredictionCol(): "variable"})
-                    .setMiniBatchSize(self._mini_batch_size)
+                .setFeedDict({"input": f"{self._name}_vassembler_features"})
+                .setFetchDict({ml_model.getPredictionCol(): "variable"})
+                .setMiniBatchSize(self._mini_batch_size)
             )
         else:
             onnx_ml = (
                 onnx_ml.setDeviceType("CPU")
-                    .setFeedDict({"input": f"{self._name}_vassembler_features"})
-                    .setFetchDict({ml_model.getProbabilityCol(): "probabilities", ml_model.getPredictionCol(): "label"})
-                    .setMiniBatchSize(self._mini_batch_size)
+                .setFeedDict({"input": f"{self._name}_vassembler_features"})
+                .setFetchDict({ml_model.getProbabilityCol(): "probabilities", ml_model.getPredictionCol(): "label"})
+                .setMiniBatchSize(self._mini_batch_size)
             )
 
         logger.info("Model convert is ended")
@@ -410,7 +406,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         assert validation_column in train.data.columns, \
             f"Validation column {validation_column} should be present in the data"
 
-        full_data = train.data
+        full_data = self._ensure_validation_size(train.data, validation_column)
 
         # prepare assembler
         if self._assembler is None:
@@ -491,6 +487,18 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         initial_types = [("input", FloatTensorType([-1, input_size]))]
         onnx_model = convert_lightgbm(lgbm_model, initial_types=initial_types, target_opset=9)
         return onnx_model.SerializeToString()
+
+    def _ensure_validation_size(self, full_data: SparkDataFrame, validation_column: str) -> SparkDataFrame:
+        # reduce validation size if it is too big
+        val_data_size = full_data.where(sf.col(validation_column)).count()
+        if val_data_size > self._max_validation_size:
+            logger.warning(f"Too big validation fold: {val_data_size}. "
+                           f"Reducing its size down according to max_validation_size setting:"
+                           f" {self._max_validation_size}")
+            full_data = full_data.where(
+                ~sf.col(validation_column) or sf.rand(seed=self._seed) < self._max_validation_size / val_data_size
+            )
+        return full_data
 
     def _build_transformer(self) -> Transformer:
         avr = self._build_averaging_transformer()
@@ -612,7 +620,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
                     for i, _ in enumerate(train_valid_iterator)
                 ]
 
-                results = self.computations_manager.compute(fit_tasks, pool_type=PoolType.job)
+                results = self.computations_manager.compute(fit_tasks)
 
                 # TODO: PARALLEL - incorrect handling of the sequential case
                 self.timer.write_run_info()
