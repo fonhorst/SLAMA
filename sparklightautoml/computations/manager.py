@@ -214,15 +214,15 @@ class ComputationsManager(ABC):
         """
         ...
 
-    @property
-    @abstractmethod
-    def can_support_slots(self) -> bool:
-        ...
+    # @property
+    # @abstractmethod
+    # def can_support_slots(self) -> bool:
+    #     ...
 
-    @contextmanager
-    @abstractmethod
-    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
-        ...
+    # @contextmanager
+    # @abstractmethod
+    # def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
+    #     ...
 
 
 class ParallelComputationsManager(ComputationsManager):
@@ -344,10 +344,6 @@ def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = 
 
 def default_computations_manager() -> ComputationsManager:
     return SequentialComputationsManager()
-
-
-def compute_tasks(tasks: List[Callable[[], T]], pool_type: WorkloadType = WorkloadType.job) -> List[T]:
-    return default_computations_manager().session(tasks, pool_type)
 
 
 class _SlotBasedTVIter(SparkBaseTrainValidIterator):

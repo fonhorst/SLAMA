@@ -529,7 +529,7 @@ class SparkAutoML(TransformerInputOutputRoles):
             for k, ml_pipe in enumerate(level)
         ]
 
-        results = self._computations_manager.session(fit_tasks, workload_type=WorkloadType.ml_pipelines)
+        results = self._computations_manager.compute2(train_valid_iterator.train, fit_tasks, workload_type=WorkloadType.ml_pipelines)
 
         ml_pipes = [ml_pipe for ml_pipe, _ in results]
         ml_pipes_preds = [pipe_preds for _, pipe_preds in results]

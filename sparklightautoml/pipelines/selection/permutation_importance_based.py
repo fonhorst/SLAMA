@@ -93,7 +93,7 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
                 return feat, (normal_score - shuffled_score)
             return func
 
-        results = self._computations_manager.session([build_score_func(it, feat)
+        results = self._computations_manager.compute2([build_score_func(it, feat)
                                                       for it, feat in enumerate(valid_data.features)])
 
         permutation_importance = {feat: diff_score for feat, diff_score in results}
