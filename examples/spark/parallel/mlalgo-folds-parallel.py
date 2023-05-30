@@ -60,9 +60,9 @@ if __name__ == "__main__":
     computations_manager = ParallelComputationsManager(job_pool_size=job_parallelism)
     iterator = SparkFoldsIterator(train_ds)#.convert_to_holdout_iterator()
     if ml_algo_name == "lgb":
-        ml_algo = SparkBoostLGBM(experimental_parallel_mode=True, computations_manager=computations_manager)
+        ml_algo = SparkBoostLGBM(experimental_parallel_mode=True, computations_parameters=computations_manager)
     else:
-        ml_algo = SparkLinearLBFGS(default_params={'regParam': [1e-5]}, computations_manager=computations_manager)
+        ml_algo = SparkLinearLBFGS(default_params={'regParam': [1e-5]}, computations_parameters=computations_manager)
 
     score = ds.task.get_dataset_metric()
 

@@ -2,7 +2,7 @@ import functools
 import logging
 from abc import ABC
 from copy import copy
-from typing import Tuple, cast, List, Optional, Sequence, Union
+from typing import Tuple, cast, List, Optional, Sequence, Union, Any, Dict
 
 import numpy as np
 from lightautoml.dataset.base import RolesDict
@@ -17,7 +17,8 @@ from pyspark.ml.util import DefaultParamsWritable, DefaultParamsReadable
 from pyspark.sql import functions as sf
 from pyspark.sql.types import IntegerType
 
-from sparklightautoml.computations.manager import ComputationsManager, default_computations_manager
+from sparklightautoml.computations.manager import ComputationsManager, default_computations_manager, \
+    SequentialComputationsManager, ComputingSlot
 from sparklightautoml.dataset.base import SparkDataset, PersistenceLevel
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.pipelines.base import TransformerInputOutputRoles
@@ -28,6 +29,8 @@ from sparklightautoml.validation.base import SparkBaseTrainValidIterator
 logger = logging.getLogger(__name__)
 
 SparkMLModel = PipelineModel
+
+ComputationalParameters = Union[Dict[str, Any], ComputationsManager]
 
 
 class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
@@ -42,7 +45,7 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         freeze_defaults: bool = True,
         timer: Optional[TaskTimer] = None,
         optimization_search_space: Optional[dict] = None,
-        computations_manager: Optional[ComputationsManager] = None
+        computations_parameters: Optional[ComputationalParameters] = None
     ):
         optimization_search_space = optimization_search_space if optimization_search_space else dict()
         super().__init__(default_params, freeze_defaults, timer, optimization_search_space)
@@ -53,7 +56,17 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         self._prediction_role: Optional[Union[NumericRole, NumericVectorOrArrayRole]] = None
         self._input_roles: Optional[RolesDict] = None
         self._service_columns: Optional[List[str]] = None
-        self._computations_manager = computations_manager or default_computations_manager()
+
+        # TODO: PARALLEL - move into a separate function
+        self._computations_manager: ComputationsManager = None
+        if computations_parameters and isinstance(computations_parameters, ComputationsManager):
+            self._computations_manager = computations_parameters
+        elif computations_parameters:
+            # TODO: PARALLEL - validate params
+            # TODO: PARALLEL - build computations manager according to the params
+            self._computations_manager = SequentialComputationsManager()
+        else:
+            self._computations_manager = SequentialComputationsManager()
 
     @property
     def features(self) -> Optional[List[str]]:
@@ -87,7 +100,7 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         return self._default_validation_col_name
 
     @property
-    def computations_manager(self) -> Optional[ComputationsManager]:
+    def computations_manager(self) -> ComputationsManager:
         return self._computations_manager
 
     @computations_manager.setter
@@ -167,7 +180,11 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
 
         return pred_ds
 
-    def fit_predict_single_fold(self, fold_prediction_column: str, validation_column: str, train: SparkDataset) \
+    def fit_predict_single_fold(self,
+                                fold_prediction_column: str,
+                                validation_column: str,
+                                train: SparkDataset,
+                                runtime_settings: Optional[Dict[str, Any]] = None) \
             -> Tuple[SparkMLModel, SparkDataFrame, str]:
         """Train on train dataset and predict on holdout dataset.
 
@@ -175,6 +192,8 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
             fold_prediction_column: column name for predictions made for this fold
             validation_column: name of the column that signals if this row is from train or val
             train: dataset containing both train and val rows.
+            runtime_settings: settings important for parallelism and performance that can depend on running processes
+            at the moment
 
         Returns:
             Target predictions for valid dataset.
@@ -261,8 +280,8 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
             -> Tuple[List[Model], List[SparkDataFrame], List[str]]:
         num_folds = len(train_valid_iterator)
 
-        def build_fit_func(i: int, mdl_pred_col: str, train: SparkDataset):
-            def func() -> Optional[Tuple[int, Model, SparkDataFrame, str]]:
+        def build_fit_func(i: int, mdl_pred_col: str):
+            def func(slot: ComputingSlot) -> Optional[Tuple[int, Model, SparkDataFrame, str]]:
                 if num_folds > 1:
                     logger.info2(
                         "===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m "
@@ -273,18 +292,21 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
                     logger.info(f"No time to calculate fold {i}/{num_folds} (Time limit is already exceeded)")
                     return None
 
-                mdl, vpred, _ = self.fit_predict_single_fold(mdl_pred_col, self.validation_column, train)
-                vpred = vpred.select(SparkDataset.ID_COLUMN, train.target_column, mdl_pred_col)
+                runtime_settings = {"num_tasks": slot.num_tasks, "num_threads": slot.num_threads_per_executor}
+                train_ds = slot.dataset
+
+                mdl, vpred, _ = self.fit_predict_single_fold(mdl_pred_col, self.validation_column, train_ds, runtime_settings)
+                vpred = vpred.select(SparkDataset.ID_COLUMN, train_ds.target_column, mdl_pred_col)
 
                 return i, mdl, vpred, mdl_pred_col
             return func
 
         fit_tasks = [
-            build_fit_func(i, f"{self.prediction_feature}_{i}", train)
-            for i, train in enumerate(train_valid_iterator)
+            build_fit_func(i, f"{self.prediction_feature}_{i}")
+            for i, _ in enumerate(train_valid_iterator)
         ]
 
-        results = self.computations_manager.compute(fit_tasks)
+        results = self.computations_manager.compute2(train_valid_iterator.train, fit_tasks)
 
         # TODO: PARALLEL - is it a correct place for running? incorrect functioning in the sequential case
         self.timer.write_run_info()

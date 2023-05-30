@@ -234,6 +234,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
                 selection_gbm = SparkBoostLGBM(timer=sel_timer_1, **lgb_params)
                 selection_gbm.set_prefix("Selector")
 
+                # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
                 importance = SparkNpPermutationImportanceEstimator(computations_manager=self._computations_manager)
 
                 extra_selector = NpIterativeFeatureSelector(
@@ -260,9 +261,10 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             **self.linear_l2_params,
             **(self._parallelism_settings.get('linear_l2', dict()) if self._parallelism_settings else dict())
         }
+        # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
         linear_l2_model = SparkLinearLBFGS(
             timer=linear_l2_timer,
-            computations_manager=self._computations_manager,
+            computations_parameters=self._computations_manager,
             **linear_l2_params
         )
         linear_l2_feats = SparkLinearFeatures(
@@ -296,25 +298,19 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             gbm_timer = self.timer.get_task_timer(algo_key, time_score)
             gbm_model, lgb_params = self._get_boosting_model(algo_key, gbm_timer)
 
-            if tuned and lgb_params.get('experimental_parallel_mode', False):
-                gbm_model.set_prefix("Tuned")
+            # lgb_params.get('experimental_parallel_mode', False)
 
-                gbm_tuner = SlotBasedParallelOptunaTuner(
-                    n_trials=self.tuning_params["max_tuning_iter"],
-                    timeout=self.tuning_params["max_tuning_time"],
-                    fit_on_holdout=self.tuning_params["fit_on_holdout"],
-                    parallelism=self._parallelism_settings["tuner"],
-                    computations_manager=self._computations_manager
-                )
-                gbm_model = (gbm_model, gbm_tuner)
-            elif tuned:
+            # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
+
+            if tuned:
                 gbm_model.set_prefix("Tuned")
 
                 gbm_tuner = ParallelOptunaTuner(
                     n_trials=self.tuning_params["max_tuning_iter"],
                     timeout=self.tuning_params["max_tuning_time"],
                     fit_on_holdout=self.tuning_params["fit_on_holdout"],
-                    parallelism=self._parallelism_settings["tuner"]
+                    parallelism=self._parallelism_settings["tuner"],
+                    computations_manager=self._computations_manager
                 )
                 gbm_model = (gbm_model, gbm_tuner)
 
@@ -337,9 +333,10 @@ class SparkTabularAutoML(SparkAutoMLPreset):
                 **self.lgb_params,
                 **(self._parallelism_settings.get("lgb", dict()) if self._parallelism_settings else dict())
             }
+            # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
             gbm_model = SparkBoostLGBM(
                 timer=gbm_timer,
-                computations_manager=self._computations_manager,
+                computations_parameters=self._computations_manager,
                 **lgb_params
             )
         elif algo_key == "cb":

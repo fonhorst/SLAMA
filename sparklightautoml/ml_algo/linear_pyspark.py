@@ -2,7 +2,7 @@
 
 import logging
 from copy import copy
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict, Any
 from typing import Union
 
 import numpy as np
@@ -13,7 +13,8 @@ from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.regression import LinearRegression, LinearRegressionModel
 from pyspark.sql import functions as sf
 
-from sparklightautoml.ml_algo.base import SparkTabularMLAlgo, SparkMLModel, AveragingTransformer
+from sparklightautoml.ml_algo.base import SparkTabularMLAlgo, SparkMLModel, AveragingTransformer, \
+    ComputationalParameters
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator, split_out_train, split_out_val
 from ..computations.manager import ComputationsManager
 from ..dataset.base import SparkDataset, PersistenceManager
@@ -87,10 +88,10 @@ class SparkLinearLBFGS(SparkTabularMLAlgo):
         freeze_defaults: bool = True,
         timer: Optional[TaskTimer] = None,
         optimization_search_space: Optional[dict] = None,
-        computations_manager: Optional[ComputationsManager] = None
+        computations_parameters: Optional[ComputationalParameters] = None
     ):
         optimization_search_space = optimization_search_space if optimization_search_space else dict()
-        super().__init__(default_params, freeze_defaults, timer, optimization_search_space, computations_manager)
+        super().__init__(default_params, freeze_defaults, timer, optimization_search_space, computations_parameters)
 
         self._prediction_col = f"prediction_{self._name}"
         self.task = None
@@ -149,7 +150,11 @@ class SparkLinearLBFGS(SparkTabularMLAlgo):
 
         return estimators, es
 
-    def fit_predict_single_fold(self, fold_prediction_column: str, validation_column: str, train: SparkDataset) \
+    def fit_predict_single_fold(self,
+                                fold_prediction_column: str,
+                                validation_column: str,
+                                train: SparkDataset,
+                                runtime_settings: Optional[Dict[str, Any]] = None) \
             -> Tuple[SparkMLModel, SparkDataFrame, str]:
         logger.info(f"fit_predict single fold in LinearLBGFS. Num of features: {len(self.input_roles.keys())} ")
 

@@ -29,13 +29,13 @@ T = TypeVar("T")
 S = TypeVar("S", bound='Slot')
 
 
-class PoolType(Enum):
+class WorkloadType(Enum):
     ml_pipelines = "ml_pipelines"
     ml_algos = "ml_algos"
     job = "job"
 
 
-__pools__: Optional[Dict[PoolType, ThreadPool]] = None
+__pools__: Optional[Dict[WorkloadType, ThreadPool]] = None
 
 
 def create_pools(ml_pipes_pool_size: int = 1, ml_algos_pool_size: int = 1, job_pool_size: int = 1):
@@ -44,13 +44,13 @@ def create_pools(ml_pipes_pool_size: int = 1, ml_algos_pool_size: int = 1, job_p
     assert __pools__ is None, "Cannot recreate already existing thread pools"
 
     __pools__ = {
-        PoolType.ml_pipelines: ThreadPool(processes=ml_pipes_pool_size) if ml_pipes_pool_size > 1 else None,
-        PoolType.ml_algos: ThreadPool(processes=ml_algos_pool_size) if ml_algos_pool_size > 1 else None,
-        PoolType.job: ThreadPool(processes=job_pool_size) if job_pool_size > 1 else None
+        WorkloadType.ml_pipelines: ThreadPool(processes=ml_pipes_pool_size) if ml_pipes_pool_size > 1 else None,
+        WorkloadType.ml_algos: ThreadPool(processes=ml_algos_pool_size) if ml_algos_pool_size > 1 else None,
+        WorkloadType.job: ThreadPool(processes=job_pool_size) if job_pool_size > 1 else None
     }
 
 
-def get_pool(pool_type: PoolType) -> Optional[ThreadPool]:
+def get_pool(pool_type: WorkloadType) -> Optional[ThreadPool]:
     return __pools__.get(pool_type, None)
 
 
@@ -83,9 +83,9 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
     parallelism_config = {
         "no_parallelism": None,
         "intra_mlpipe_parallelism": {
-            PoolType.ml_pipelines.name: 1,
-            PoolType.ml_algos.name: 1,
-            PoolType.job.name: parallelism,
+            WorkloadType.ml_pipelines.name: 1,
+            WorkloadType.ml_algos.name: 1,
+            WorkloadType.job.name: parallelism,
             "tuner": parallelism,
             "linear_l2": {},
             "lgb": {
@@ -95,9 +95,9 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
             }
         },
         "intra_mlpipe_parallelism_with_experimental_features": {
-            PoolType.ml_pipelines.name: 1,
-            PoolType.ml_algos.name: 1,
-            PoolType.job.name: parallelism,
+            WorkloadType.ml_pipelines.name: 1,
+            WorkloadType.ml_algos.name: 1,
+            WorkloadType.job.name: parallelism,
             "tuner": parallelism,
             "linear_l2": {},
             "lgb": {
@@ -107,9 +107,9 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
             }
         },
         "mlpipe_level_parallelism": {
-            PoolType.ml_pipelines.name: parallelism,
-            PoolType.ml_algos.name: 1,
-            PoolType.job.name: 1,
+            WorkloadType.ml_pipelines.name: parallelism,
+            WorkloadType.ml_algos.name: 1,
+            WorkloadType.job.name: 1,
             "tuner": 1,
             "linear_l2": {},
             "lgb": {}
@@ -139,9 +139,10 @@ class PrefferedLocsPartitionCoalescerTransformer(JavaTransformer):
 
 
 @dataclass
-class DatasetSlot:
+class ComputingSlot:
     dataset: SparkDataset
-    free: bool
+    num_tasks: Optional[int] = None
+    num_threads_per_executor: Optional[int] = None
 
 
 @dataclass
@@ -150,20 +151,15 @@ class SlotSize:
     num_threads_per_executor: int
 
 
-class SlotAllocator(ABC):
+class ComputingSession(ABC):
     @abstractmethod
     @contextmanager
-    def allocate(self) -> DatasetSlot:
-        ...
-
-    @property
-    @abstractmethod
-    def slot_size(self) -> SlotSize:
+    def allocate(self) -> ComputingSlot:
         ...
 
 
-class ParallelSlotAllocator(SlotAllocator):
-    def __init__(self, slot_size: SlotSize, slots: List[DatasetSlot], pool: ThreadPool):
+class ParallelSlotAllocator(ComputingSession):
+    def __init__(self, slot_size: SlotSize, slots: List[ComputingSlot], pool: ThreadPool):
         assert len(slots) > 0
         self._slot_size = slot_size
         self._slots = slots
@@ -175,7 +171,7 @@ class ParallelSlotAllocator(SlotAllocator):
         return self._slot_size
 
     @contextmanager
-    def allocate(self) -> DatasetSlot:
+    def allocate(self) -> ComputingSlot:
         try:
             while True:
                 try:
@@ -197,13 +193,25 @@ class ParallelSlotAllocator(SlotAllocator):
 
 
 class ComputationsManager(ABC):
+    @contextmanager
     @abstractmethod
-    def compute(self, tasks: List[Callable[[], T]], pool_type: PoolType = PoolType.job) -> List[T]:
+    def session(self, dataset: SparkDataset, workload_type: WorkloadType = WorkloadType.job):
         ...
 
-    @property
     @abstractmethod
-    def default_slot_size(self) -> Optional[SlotSize]:
+    def compute2(self,
+                 dataset: SparkDataset,
+                 tasks: List[Callable[[ComputingSlot], T]],
+                 workload_type: WorkloadType = WorkloadType.job):
+        ...
+
+    @abstractmethod
+    def allocate(self) -> ComputingSlot:
+        """
+        Thread safe method
+        Returns:
+
+        """
         ...
 
     @property
@@ -213,7 +221,7 @@ class ComputationsManager(ABC):
 
     @contextmanager
     @abstractmethod
-    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: PoolType) -> SlotAllocator:
+    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
         ...
 
 
@@ -226,7 +234,7 @@ class ParallelComputationsManager(ComputationsManager):
         create_pools(ml_pipes_pool_size, ml_algos_pool_size, job_pool_size)
         self._default_slot_size = None
 
-    def _get_pool(self, pool_type: PoolType) -> Optional[ThreadPool]:
+    def _get_pool(self, pool_type: WorkloadType) -> Optional[ThreadPool]:
         return get_pool(pool_type)
 
     @property
@@ -237,8 +245,8 @@ class ParallelComputationsManager(ComputationsManager):
     def default_slot_size(self) -> Optional[SlotSize]:
         return self._default_slot_size
 
-    def compute(self, tasks: List[Callable[[], T]], pool_type: PoolType = PoolType.job) -> List[T]:
-        pool = self._get_pool(pool_type)
+    def session(self, tasks: List[Callable[[], T]], workload_type: WorkloadType = WorkloadType.job) -> List[T]:
+        pool = self._get_pool(workload_type)
 
         if not pool:
             return _compute_sequential(tasks)
@@ -253,7 +261,7 @@ class ParallelComputationsManager(ComputationsManager):
         return results
 
     @contextmanager
-    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: PoolType) -> SlotAllocator:
+    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
         logger.warning("Beaware for correct functioning slot-based computations "
                        "there should noy be any parallel computations from "
                        "different entities (other MLPipes, MLAlgo, etc).")
@@ -268,7 +276,7 @@ class ParallelComputationsManager(ComputationsManager):
             slot.dataset.data.unpersist()
 
     @staticmethod
-    def _prepare_trains(dataset: SparkDataset, parallelism: int) -> Tuple[SlotSize, List[DatasetSlot]]:
+    def _prepare_trains(dataset: SparkDataset, parallelism: int) -> Tuple[SlotSize, List[ComputingSlot]]:
         execs = get_executors()
         exec_cores = get_executors_cores()
         execs_per_slot = max(1, math.floor(len(execs) / parallelism))
@@ -295,7 +303,7 @@ class ParallelComputationsManager(ComputationsManager):
             coalesced_dataset.set_data(coalesced_data, coalesced_dataset.features, coalesced_dataset.roles,
                                        name=f"CoalescedForPrefLocs_{dataset.name}")
 
-            _train_slots.append(DatasetSlot(dataset=coalesced_dataset,free=True))
+            _train_slots.append(ComputingSlot(dataset=coalesced_dataset, free=True))
 
             logger.info(f"Preffered locations for slot #{i}: {pref_locs}")
 
@@ -315,10 +323,10 @@ class SequentialComputationsManager(ComputationsManager):
     def can_support_slots(self) -> bool:
         return False
 
-    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: PoolType) -> SlotAllocator:
+    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
         raise NotImplementedError("Not supported by this computational manager")
 
-    def compute(self, tasks: list[Callable[[], T]], pool_type: PoolType = PoolType.job) -> List[T]:
+    def session(self, tasks: list[Callable[[], T]], workload_type: WorkloadType = WorkloadType.job) -> List[T]:
         return _compute_sequential(tasks)
 
 
@@ -327,9 +335,9 @@ def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = 
         comp_manager = SequentialComputationsManager()
     else:
         comp_manager = ParallelComputationsManager(
-            ml_pipes_pool_size=parallelism_settings[PoolType.ml_pipelines.name],
-            ml_algos_pool_size=parallelism_settings[PoolType.ml_algos.name],
-            job_pool_size=parallelism_settings[PoolType.job.name]
+            ml_pipes_pool_size=parallelism_settings[WorkloadType.ml_pipelines.name],
+            ml_algos_pool_size=parallelism_settings[WorkloadType.ml_algos.name],
+            job_pool_size=parallelism_settings[WorkloadType.job.name]
         )
     return comp_manager
 
@@ -338,12 +346,12 @@ def default_computations_manager() -> ComputationsManager:
     return SequentialComputationsManager()
 
 
-def compute_tasks(tasks: List[Callable[[], T]], pool_type: PoolType = PoolType.job) -> List[T]:
-    return default_computations_manager().compute(tasks, pool_type)
+def compute_tasks(tasks: List[Callable[[], T]], pool_type: WorkloadType = WorkloadType.job) -> List[T]:
+    return default_computations_manager().session(tasks, pool_type)
 
 
 class _SlotBasedTVIter(SparkBaseTrainValidIterator):
-    def __init__(self, slots: Callable[[], DatasetSlot], tviter: SparkBaseTrainValidIterator):
+    def __init__(self, slots: Callable[[], ComputingSlot], tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
         self._slots = slots
         self._tviter = tviter
@@ -396,7 +404,7 @@ class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
     def convert_to_holdout_iterator(self):
         return _SlotInitiatedTVIter(self._slot_allocator, self._tviter.convert_to_holdout_iterator())
 
-    def __init__(self, slot_allocator: SlotAllocator, tviter: SparkBaseTrainValidIterator):
+    def __init__(self, slot_allocator: ComputationsManager, tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
         self._slot_allocator = slot_allocator
         self._tviter = deepcopy(tviter)

@@ -47,4 +47,4 @@ if __name__ == "__main__":
 
     tasks = [build_task(name, feature_pipe) for name, feature_pipe in feature_pipelines.items()]
 
-    computations_manager.compute(tasks)
+    computations_manager.session(tasks)
