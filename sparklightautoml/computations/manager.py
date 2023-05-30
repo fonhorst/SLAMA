@@ -277,7 +277,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
     def session(self, dataset: SparkDataset):
         # TODO: PARALLEL - add id to slots
-        with self._prepare_datasets(dataset) as computing_slots:
+        with self._make_computing_slots(dataset) as computing_slots:
             self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
             for cslot in computing_slots:
                 self._available_computing_slots_queue.put(cslot)
@@ -302,57 +302,48 @@ class ParallelComputationalJobManager(ComputationalJobManager):
     def allocate(self) -> ComputingSlot:
         return self._available_computing_slots_queue.get()
 
-    def _prepare_dataset(self, dataset: SparkDataset) -> SparkDataset:
-        raise NotImplementedError()
-
-
+    # TODO: PARALLEL - need to fix working with pools
     def _get_pool(self, pool_type: WorkloadType) -> Optional[ThreadPool]:
         return get_pool(pool_type)
 
-    @property
-    def can_support_slots(self) -> bool:
-        return True
-
-    @property
-    def default_slot_size(self) -> Optional[SlotSize]:
-        return self._default_slot_size
-
-
-
-        return results
-
     @contextmanager
-    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
-        logger.warning("Beaware for correct functioning slot-based computations "
+    def _make_computing_slots(self, dataset) -> List[ComputingSlot]:
+        if self._use_location_prefs_mode:
+            computing_slots = None
+            try:
+                computing_slots = self._coalesced_dataset_copies_into_preffered_locations(dataset)
+                yield computing_slots
+            finally:
+                if computing_slots is not None:
+                    for cslot in computing_slots:
+                        cslot.dataset.unpersist()
+        else:
+            yield [ComputingSlot(dataset) for _ in range(self._parallelism)]
+
+    def _coalesced_dataset_copies_into_preffered_locations(self, dataset: SparkDataset) \
+            -> List[ComputingSlot]:
+        logger.warning("Be aware for correct functioning slot-based computations "
                        "there should noy be any parallel computations from "
                        "different entities (other MLPipes, MLAlgo, etc).")
 
-        pool = self._get_pool(pool_type)
-        slot_size, slots = self._prepare_trains(dataset=dataset, parallelism=parallelism)
-
-        yield ParallelSlotAllocator(slot_size, slots, pool)
-
-        logger.info("Clear cache of dataset copies (slots) for the coalesced dataset")
-        for slot in slots:
-            slot.dataset.data.unpersist()
-
-    @staticmethod
-    def _prepare_trains(dataset: SparkDataset, parallelism: int) -> Tuple[SlotSize, List[ComputingSlot]]:
         execs = get_executors()
         exec_cores = get_executors_cores()
-        execs_per_slot = max(1, math.floor(len(execs) / parallelism))
+        execs_per_slot = max(1, math.floor(len(execs) / self._parallelism))
         slots_num = int(len(execs) / execs_per_slot)
-        slot_size = SlotSize(num_tasks=execs_per_slot * exec_cores, num_threads_per_executor=max(exec_cores - 1, 1))
+        num_tasks = execs_per_slot * exec_cores
+        num_threads_per_executor = max(exec_cores - 1, 1)
 
-        if len(execs) % parallelism != 0:
+        if len(execs) % self._parallelism != 0:
             warnings.warn(f"Uneven number of executors per job. "
                           f"Setting execs per slot: {execs_per_slot}, slots num: {slots_num}.")
 
         logger.info(f"Coalescing dataset into multiple copies (num copies: {slots_num}) "
                     f"with specified preffered locations")
 
-        _train_slots = []
+        dataset_slots = []
 
+        # TODO: PARALLEL - may be executed in parallel
+        # TODO: PARALLEL - it might be optimized on Scala level and squashed into a single operation
         for i in range(slots_num):
             pref_locs = execs[i * execs_per_slot: (i + 1) * execs_per_slot]
 
@@ -364,20 +355,15 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             coalesced_dataset.set_data(coalesced_data, coalesced_dataset.features, coalesced_dataset.roles,
                                        name=f"CoalescedForPrefLocs_{dataset.name}")
 
-            _train_slots.append(ComputingSlot(dataset=coalesced_dataset, free=True))
+            dataset_slots.append(ComputingSlot(
+                dataset=coalesced_dataset,
+                num_tasks=num_tasks,
+                num_threads_per_executor=num_threads_per_executor
+            ))
 
-            logger.info(f"Preffered locations for slot #{i}: {pref_locs}")
+            logger.debug(f"Preffered locations for slot #{i}: {pref_locs}")
 
-        return slot_size, _train_slots
-
-    @contextmanager
-    def _prepare_datasets(self, dataset) -> List[ComputingSlot]:
-        if self._use_location_prefs_mode:
-            # TODO: PARALLEL - add try .. finally to clean computing slots datasets
-            raise NotImplementedError()
-            # TODO: PARALLEL - clean computing slots datasets
-        else:
-            yield [ComputingSlot(dataset) for _ in range(self._parallelism)]
+        return dataset_slots
 
 
 def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = None):
