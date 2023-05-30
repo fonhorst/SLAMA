@@ -326,6 +326,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
                        "there should noy be any parallel computations from "
                        "different entities (other MLPipes, MLAlgo, etc).")
 
+        # TODO: PARALLEL - improve function to work with uneven number of executors
         execs = get_executors()
         exec_cores = get_executors_cores()
         execs_per_slot = max(1, math.floor(len(execs) / self._parallelism))
