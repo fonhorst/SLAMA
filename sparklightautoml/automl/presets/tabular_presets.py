@@ -1,7 +1,7 @@
 import logging
 import os
 from copy import deepcopy, copy
-from typing import Optional, Sequence, Iterable, Tuple, List
+from typing import Optional, Sequence, Iterable, Tuple, List, Union, Dict, Any
 
 import numpy as np
 from lightautoml.automl.presets.base import upd_params
@@ -17,7 +17,7 @@ from pyspark.sql import functions as sf, Window
 from pyspark.sql.types import DateType, StringType
 from tqdm import tqdm
 
-from sparklightautoml.automl.base import ReadableIntoSparkDf, ParallelismMode
+from sparklightautoml.automl.base import ReadableIntoSparkDf, AutoMLComputationsSettings
 from sparklightautoml.automl.blend import SparkWeightedBlender
 from sparklightautoml.automl.presets.base import SparkAutoMLPreset
 from sparklightautoml.automl.presets.utils import (
@@ -26,11 +26,12 @@ from sparklightautoml.automl.presets.utils import (
     replace_month_in_date,
     replace_year_in_date,
 )
+from sparklightautoml.computations.manager import ComputationManagerFactory, AutoMLStageManager
 from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
 from sparklightautoml.ml_algo.linear_pyspark import SparkLinearLBFGS
-from sparklightautoml.ml_algo.tuning.parallel_optuna import SlotBasedParallelOptunaTuner, ParallelOptunaTuner
+from sparklightautoml.ml_algo.tuning.parallel_optuna import ParallelOptunaTuner
 from sparklightautoml.pipelines.features.lgb_pipeline import SparkLGBSimpleFeatures, SparkLGBAdvancedPipeline
 from sparklightautoml.pipelines.features.linear_pipeline import SparkLinearFeatures
 from sparklightautoml.pipelines.ml.nested_ml_pipe import SparkNestedTabularMLPipeline
@@ -42,7 +43,6 @@ from sparklightautoml.tasks.base import SparkTask
 from sparklightautoml.utils import SparkDataFrame
 
 logger = logging.getLogger(__name__)
-
 base_dir = os.path.dirname(__file__)
 
 
@@ -99,11 +99,17 @@ class SparkTabularAutoML(SparkAutoMLPreset):
         gbm_pipeline_params: Optional[dict] = None,
         linear_pipeline_params: Optional[dict] = None,
         persistence_manager: Optional[PersistenceManager] = None,
-        parallelism_mode: ParallelismMode = ("no_parallelism", -1)
+        computation_settings: AutoMLComputationsSettings = ("no_parallelism", -1)
     ):
         if config_path is None:
             config_path = os.path.join(base_dir, self._default_config_path)
-        super().__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path, parallelism_mode)
+
+        # TODO: PARALLEL - parse computation_settings
+        computation_settings = computation_settings
+        self._computation_managers_factory = ComputationManagerFactory()
+
+        super().__init__(task, timeout, memory_limit, cpu_limit, gpu_ids,
+                         timing_params, config_path, self._computation_managers_factory.get_ml_pipelines_manager())
 
         self._persistence_manager = persistence_manager or PlainCachePersistenceManager()
 
@@ -235,7 +241,9 @@ class SparkTabularAutoML(SparkAutoMLPreset):
                 selection_gbm.set_prefix("Selector")
 
                 # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
-                importance = SparkNpPermutationImportanceEstimator(computations_manager=self._computations_manager)
+                importance = SparkNpPermutationImportanceEstimator(
+                    computations_settings=self._computation_managers_factory.get_selector_manager()
+                )
 
                 extra_selector = NpIterativeFeatureSelector(
                     selection_feats,
@@ -264,7 +272,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
         # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
         linear_l2_model = SparkLinearLBFGS(
             timer=linear_l2_timer,
-            computations_parameters=self._computations_manager,
+            computations_settings=self._computation_managers_factory.get_linear_manager(),
             **linear_l2_params
         )
         linear_l2_feats = SparkLinearFeatures(
@@ -310,7 +318,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
                     timeout=self.tuning_params["max_tuning_time"],
                     fit_on_holdout=self.tuning_params["fit_on_holdout"],
                     parallelism=self._parallelism_settings["tuner"],
-                    computations_manager=self._computations_manager
+                    computations_manager=self._computation_managers_factory.get_tuning_manager()
                 )
                 gbm_model = (gbm_model, gbm_tuner)
 
@@ -336,7 +344,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
             gbm_model = SparkBoostLGBM(
                 timer=gbm_timer,
-                computations_parameters=self._computations_manager,
+                computations_settings=self._computation_managers_factory.get_gbm_manager(),
                 **lgb_params
             )
         elif algo_key == "cb":

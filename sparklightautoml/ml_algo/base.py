@@ -17,8 +17,8 @@ from pyspark.ml.util import DefaultParamsWritable, DefaultParamsReadable
 from pyspark.sql import functions as sf
 from pyspark.sql.types import IntegerType
 
-from sparklightautoml.computations.manager import ComputationsManager, default_computations_manager, \
-    SequentialComputationsManager, ComputingSlot
+from sparklightautoml.computations.manager import ComputationalJobManager, default_computations_manager, \
+    SequentialComputationsManagerComputational, ComputingSlot, ComputationsSettings
 from sparklightautoml.dataset.base import SparkDataset, PersistenceLevel
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.pipelines.base import TransformerInputOutputRoles
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 SparkMLModel = PipelineModel
 
-ComputationalParameters = Union[Dict[str, Any], ComputationsManager]
+ComputationalParameters = Union[Dict[str, Any], ComputationalJobManager]
 
 
 class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
@@ -45,7 +45,7 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         freeze_defaults: bool = True,
         timer: Optional[TaskTimer] = None,
         optimization_search_space: Optional[dict] = None,
-        computations_parameters: Optional[ComputationalParameters] = None
+        computations_settings: Optional[ComputationsSettings] = None
     ):
         optimization_search_space = optimization_search_space if optimization_search_space else dict()
         super().__init__(default_params, freeze_defaults, timer, optimization_search_space)
@@ -58,15 +58,15 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         self._service_columns: Optional[List[str]] = None
 
         # TODO: PARALLEL - move into a separate function
-        self._computations_manager: ComputationsManager = None
-        if computations_parameters and isinstance(computations_parameters, ComputationsManager):
-            self._computations_manager = computations_parameters
-        elif computations_parameters:
+        self._computations_manager: ComputationalJobManager = None
+        if computations_settings and isinstance(computations_settings, ComputationalJobManager):
+            self._computations_manager = computations_settings
+        elif computations_settings:
             # TODO: PARALLEL - validate params
             # TODO: PARALLEL - build computations manager according to the params
-            self._computations_manager = SequentialComputationsManager()
+            self._computations_manager = SequentialComputationsManagerComputational()
         else:
-            self._computations_manager = SequentialComputationsManager()
+            self._computations_manager = SequentialComputationsManagerComputational()
 
     @property
     def features(self) -> Optional[List[str]]:
@@ -100,11 +100,11 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         return self._default_validation_col_name
 
     @property
-    def computations_manager(self) -> ComputationsManager:
+    def computations_manager(self) -> ComputationalJobManager:
         return self._computations_manager
 
     @computations_manager.setter
-    def computations_manager(self, value: ComputationsManager):
+    def computations_manager(self, value: ComputationalJobManager):
         self._computations_manager = value
 
     @log_exception(logger=logger)

@@ -10,7 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing.pool import ThreadPool
-from typing import Callable, Optional, Iterable, Any, Dict, Tuple, cast
+from typing import Callable, Optional, Iterable, Any, Dict, Tuple, cast, Union
 from typing import TypeVar, List
 
 from pyspark import inheritable_thread_target, SparkContext, keyword_only
@@ -27,6 +27,11 @@ ENV_VAR_SLAMA_COMPUTATIONS_MANAGER = "SLAMA_COMPUTATIONS_MANAGER"
 
 T = TypeVar("T")
 S = TypeVar("S", bound='Slot')
+
+
+ComputationsStagesSettings = Union[Tuple[str, int], Dict[str, Any], 'AutoMLStageManager']
+AutoMLComputationsSettings = Union[Tuple[str, int], Dict[str, Any], 'ComputationManagerFactory']
+ComputationsSettings = Union[Dict[str, Any], 'ComputationalJobManager']
 
 
 class WorkloadType(Enum):
@@ -192,17 +197,20 @@ class ParallelSlotAllocator(ComputingSession):
             raise ex
 
 
-class ComputationsManager(ABC):
+class AutoMLStageManager(ABC):
+    @abstractmethod
+    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        ...
+
+
+class ComputationalJobManager(ABC):
     @contextmanager
     @abstractmethod
-    def session(self, dataset: SparkDataset, workload_type: WorkloadType = WorkloadType.job):
+    def session(self, dataset: SparkDataset):
         ...
 
     @abstractmethod
-    def compute2(self,
-                 dataset: SparkDataset,
-                 tasks: List[Callable[[ComputingSlot], T]],
-                 workload_type: WorkloadType = WorkloadType.job):
+    def compute2(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         ...
 
     @abstractmethod
@@ -214,18 +222,31 @@ class ComputationsManager(ABC):
         """
         ...
 
-    # @property
-    # @abstractmethod
-    # def can_support_slots(self) -> bool:
-    #     ...
 
-    # @contextmanager
-    # @abstractmethod
-    # def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
-    #     ...
+class ComputationManagerFactory:
+    def __init__(self, computations_settings: Optional[Dict[str, Any]] = None):
+        pass
+
+    def get_ml_pipelines_manager(self) -> AutoMLStageManager:
+        pass
+
+    def get_ml_algo_manager(self) -> AutoMLStageManager:
+        pass
+
+    def get_gbm_manager(self) -> ComputationalJobManager:
+        pass
+
+    def get_linear_manager(self) -> ComputationalJobManager:
+        pass
+
+    def get_tuning_manager(self) -> ComputationalJobManager:
+        pass
+
+    def get_selector_manager(self) -> ComputationalJobManager:
+        pass
 
 
-class ParallelComputationsManager(ComputationsManager):
+class ParallelComputationsManagerComputational(ComputationalJobManager):
     def __init__(self,
                  ml_pipes_pool_size: int = 1,
                  ml_algos_pool_size: int = 1,
@@ -310,9 +331,9 @@ class ParallelComputationsManager(ComputationsManager):
         return slot_size, _train_slots
 
 
-class SequentialComputationsManager(ComputationsManager):
+class SequentialComputationsManagerComputational(ComputationalJobManager):
     def __init__(self, default_slot_size: Optional[SlotSize] = None):
-        super(SequentialComputationsManager, self).__init__()
+        super(SequentialComputationsManagerComputational, self).__init__()
         self._default_slot_size = default_slot_size
 
     @property
@@ -332,9 +353,9 @@ class SequentialComputationsManager(ComputationsManager):
 
 def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = None):
     if parallelism_settings is None:
-        comp_manager = SequentialComputationsManager()
+        comp_manager = SequentialComputationsManagerComputational()
     else:
-        comp_manager = ParallelComputationsManager(
+        comp_manager = ParallelComputationsManagerComputational(
             ml_pipes_pool_size=parallelism_settings[WorkloadType.ml_pipelines.name],
             ml_algos_pool_size=parallelism_settings[WorkloadType.ml_algos.name],
             job_pool_size=parallelism_settings[WorkloadType.job.name]
@@ -342,8 +363,8 @@ def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = 
     return comp_manager
 
 
-def default_computations_manager() -> ComputationsManager:
-    return SequentialComputationsManager()
+def default_computations_manager() -> ComputationalJobManager:
+    return SequentialComputationsManagerComputational()
 
 
 class _SlotBasedTVIter(SparkBaseTrainValidIterator):
@@ -400,7 +421,7 @@ class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
     def convert_to_holdout_iterator(self):
         return _SlotInitiatedTVIter(self._slot_allocator, self._tviter.convert_to_holdout_iterator())
 
-    def __init__(self, slot_allocator: ComputationsManager, tviter: SparkBaseTrainValidIterator):
+    def __init__(self, slot_allocator: ComputationalJobManager, tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
         self._slot_allocator = slot_allocator
         self._tviter = deepcopy(tviter)

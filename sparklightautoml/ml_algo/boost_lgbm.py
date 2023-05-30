@@ -1,6 +1,5 @@
 import logging
-import warnings
-from copy import copy, deepcopy
+from copy import copy
 from typing import Dict, Optional, Tuple, Union, cast, List, Any
 
 import lightgbm as lgb
@@ -12,7 +11,7 @@ from lightautoml.utils.timer import TaskTimer
 from lightautoml.validation.base import TrainValidIterator
 from lightgbm import Booster
 from pandas import Series
-from pyspark.ml import Transformer, PipelineModel, Model
+from pyspark.ml import Transformer, PipelineModel
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.util import MLWritable, MLReadable, MLWriter
 from synapse.ml.lightgbm import (
@@ -23,7 +22,6 @@ from synapse.ml.lightgbm import (
 )
 from synapse.ml.onnx import ONNXModel
 
-from sparklightautoml.computations.manager import WorkloadType, ComputingSession, ComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo, SparkMLModel, AveragingTransformer, \
@@ -155,11 +153,11 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         parallelism: int = 1,
         use_barrier_execution_mode: bool = False,
         experimental_parallel_mode: bool = False,
-        computations_parameters: Optional[ComputationalParameters] = None
+        computations_settings: Optional[ComputationalParameters] = None
     ):
         optimization_search_space = optimization_search_space if optimization_search_space else dict()
         SparkTabularMLAlgo.__init__(self, default_params, freeze_defaults,
-                                    timer, optimization_search_space, computations_parameters)
+                                    timer, optimization_search_space, computations_settings)
         self._probability_col_name = "probability"
         self._prediction_col_name = "prediction"
         self._raw_prediction_col_name = "raw_prediction"

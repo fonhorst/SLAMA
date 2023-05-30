@@ -11,7 +11,7 @@ from pyspark.sql.pandas.functions import pandas_udf
 from pyspark.sql.types import StructField
 
 from sparklightautoml.pipelines.selection.base import SparkImportanceEstimator
-from ...computations.manager import ComputationsManager, default_computations_manager
+from ...computations.manager import ComputationalJobManager, default_computations_manager, ComputationsStagesSettings
 from ...dataset.base import LAMLDataset, SparkDataset
 from ...ml_algo.base import MLAlgo, SparkTabularMLAlgo
 from ...validation.base import SparkBaseTrainValidIterator
@@ -27,7 +27,7 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
 
     """
 
-    def __init__(self, random_state: int = 42, computations_manager: Optional[ComputationsManager] = None):
+    def __init__(self, random_state: int = 42, computations_settings: Optional[ComputationsStagesSettings] = None):
         """
         Args:
             random_state: seed for random generation of features permutation.
@@ -35,7 +35,7 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
         """
         super().__init__()
         self.random_state = random_state
-        self._computations_manager = computations_manager or default_computations_manager()
+        self._computations_manager = computations_settings or default_computations_manager()
 
     def fit(
         self,

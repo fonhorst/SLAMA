@@ -1,5 +1,5 @@
 from examples.spark.examples_utils import get_spark_session, get_dataset
-from sparklightautoml.computations.manager import ParallelComputationsManager
+from sparklightautoml.computations.manager import ParallelComputationsManagerComputational
 from sparklightautoml.pipelines.features.lgb_pipeline import SparkLGBAdvancedPipeline, SparkLGBSimpleFeatures
 from sparklightautoml.pipelines.features.linear_pipeline import SparkLinearFeatures
 from sparklightautoml.reader.base import SparkToSparkReader

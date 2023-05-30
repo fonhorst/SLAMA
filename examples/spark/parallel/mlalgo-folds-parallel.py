@@ -7,7 +7,7 @@ import os
 from lightautoml.ml_algo.tuning.base import DefaultTuner
 from lightautoml.ml_algo.utils import tune_and_fit_predict
 from pyspark.sql import functions as sf
-from sparklightautoml.computations.manager import ParallelComputationsManager
+from sparklightautoml.computations.manager import ParallelComputationsManagerComputational
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
@@ -57,12 +57,12 @@ if __name__ == "__main__":
     train_ds, test_ds = train_ds.persist(), test_ds.persist()
 
     # create main entities
-    computations_manager = ParallelComputationsManager(job_pool_size=job_parallelism)
+    computations_manager = ParallelComputationsManagerComputational(job_pool_size=job_parallelism)
     iterator = SparkFoldsIterator(train_ds)#.convert_to_holdout_iterator()
     if ml_algo_name == "lgb":
-        ml_algo = SparkBoostLGBM(experimental_parallel_mode=True, computations_parameters=computations_manager)
+        ml_algo = SparkBoostLGBM(experimental_parallel_mode=True, computations_settings=computations_manager)
     else:
-        ml_algo = SparkLinearLBFGS(default_params={'regParam': [1e-5]}, computations_parameters=computations_manager)
+        ml_algo = SparkLinearLBFGS(default_params={'regParam': [1e-5]}, computations_settings=computations_manager)
 
     score = ds.task.get_dataset_metric()
 

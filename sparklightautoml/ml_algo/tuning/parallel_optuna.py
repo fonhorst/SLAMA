@@ -8,7 +8,7 @@ from lightautoml.validation.base import HoldoutIterator
 
 from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputingSession, \
     WorkloadType, \
-    SequentialComputationsManager, ComputationsManager
+    SequentialComputationsManagerComputational, ComputationalJobManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
@@ -25,7 +25,7 @@ class ParallelOptunaTuner(OptunaTuner):
                  random_state: int = 42,
                  parallelism: int = 1,
                  # TODO: PARALLEL - add proper argument here
-                 computations_manager: Optional[ComputationsManager] = None):
+                 computations_manager: Optional[ComputationalJobManager] = None):
         super().__init__(timeout, n_trials, direction, fit_on_holdout, random_state)
         self._parallelism = parallelism
         # TODO: PARALLEL - add proper construction here
@@ -113,7 +113,7 @@ class ParallelOptunaTuner(OptunaTuner):
 
         with self._computations_manager.session(train_valid_iterator.train):
             ml_algo = deepcopy(ml_algo)
-            ml_algo.computations_manager = SequentialComputationsManager()
+            ml_algo.computations_manager = SequentialComputationsManagerComputational()
 
             self.study.optimize(
                 func=self._get_objective(
