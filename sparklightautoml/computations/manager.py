@@ -248,9 +248,8 @@ class ComputationManagerFactory:
 
 
 class SequentialComputationalJobManager(ComputationalJobManager):
-    def __init__(self, default_slot_size: Optional[SlotSize] = None):
+    def __init__(self):
         super(SequentialComputationalJobManager, self).__init__()
-        self._default_slot_size = default_slot_size
         self._dataset: Optional[SparkDataset] = None
 
     @contextmanager
@@ -382,16 +381,17 @@ class ParallelAutoMLStageManager(AutoMLStageManager):
         return self._pool.map(lambda task: task(), tasks)
 
 
-def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = None):
-    if parallelism_settings is None:
-        comp_manager = SequentialComputationsManagerComputational()
+def build_computations_manager(computations_settings: ComputationsSettings = None) -> ComputationalJobManager:
+    if computations_settings and isinstance(computations_settings, ComputationalJobManager):
+        computations_manager = computations_settings
+    elif computations_settings:
+        # TODO: PARALLEL - validate params
+        # TODO: PARALLEL - build computations manager according to the params
+        computations_manager = SequentialComputationsManagerComputational()
     else:
-        comp_manager = ParallelComputationsManagerComputational(
-            ml_pipes_pool_size=parallelism_settings[WorkloadType.ml_pipelines.name],
-            ml_algos_pool_size=parallelism_settings[WorkloadType.ml_algos.name],
-            job_pool_size=parallelism_settings[WorkloadType.job.name]
-        )
-    return comp_manager
+        computations_manager = SequentialComputationalJobManager()
+
+    return computations_manager
 
 
 def default_computations_manager() -> ComputationalJobManager:

@@ -6,9 +6,8 @@ import optuna
 from lightautoml.ml_algo.tuning.optuna import OptunaTuner
 from lightautoml.validation.base import HoldoutIterator
 
-from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputingSession, \
-    WorkloadType, \
-    SequentialComputationsManagerComputational, ComputationalJobManager
+from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputationalJobManager, \
+    SequentialComputationalJobManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
@@ -112,8 +111,9 @@ class ParallelOptunaTuner(OptunaTuner):
         self.study = optuna.create_study(direction=self.direction, sampler=sampler)
 
         with self._computations_manager.session(train_valid_iterator.train):
+            # TODO: PARALLEL - need to set computations manager to None here
             ml_algo = deepcopy(ml_algo)
-            ml_algo.computations_manager = SequentialComputationsManagerComputational()
+            ml_algo.computations_manager = SequentialComputationalJobManager()
 
             self.study.optimize(
                 func=self._get_objective(

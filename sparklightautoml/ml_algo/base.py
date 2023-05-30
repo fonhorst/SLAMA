@@ -4,21 +4,19 @@ from abc import ABC
 from copy import copy
 from typing import Tuple, cast, List, Optional, Sequence, Union, Any, Dict
 
-import numpy as np
 from lightautoml.dataset.base import RolesDict
 from lightautoml.dataset.roles import NumericRole
 from lightautoml.ml_algo.base import MLAlgo
 from lightautoml.utils.timer import TaskTimer
 from pyspark.ml import PipelineModel, Transformer, Model
-from pyspark.ml.functions import vector_to_array, array_to_vector
 from pyspark.ml.param import Params
 from pyspark.ml.param.shared import HasInputCols, HasOutputCol, Param
 from pyspark.ml.util import DefaultParamsWritable, DefaultParamsReadable
 from pyspark.sql import functions as sf
 from pyspark.sql.types import IntegerType
 
-from sparklightautoml.computations.manager import ComputationalJobManager, default_computations_manager, \
-    SequentialComputationsManagerComputational, ComputingSlot, ComputationsSettings
+from sparklightautoml.computations.manager import ComputationalJobManager, ComputingSlot, ComputationsSettings, \
+    build_computations_manager
 from sparklightautoml.dataset.base import SparkDataset, PersistenceLevel
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.pipelines.base import TransformerInputOutputRoles
@@ -56,17 +54,8 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         self._prediction_role: Optional[Union[NumericRole, NumericVectorOrArrayRole]] = None
         self._input_roles: Optional[RolesDict] = None
         self._service_columns: Optional[List[str]] = None
-
-        # TODO: PARALLEL - move into a separate function
-        self._computations_manager: ComputationalJobManager = None
-        if computations_settings and isinstance(computations_settings, ComputationalJobManager):
-            self._computations_manager = computations_settings
-        elif computations_settings:
-            # TODO: PARALLEL - validate params
-            # TODO: PARALLEL - build computations manager according to the params
-            self._computations_manager = SequentialComputationsManagerComputational()
-        else:
-            self._computations_manager = SequentialComputationsManagerComputational()
+        self._computations_manager: Optional[ComputationalJobManager] \
+            = build_computations_manager(computations_settings)
 
     @property
     def features(self) -> Optional[List[str]]:
@@ -145,7 +134,6 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
 
         self._infer_and_set_prediction_role(valid_ds)
 
-        preds_dfs: List[SparkDataFrame] = []
         self._models_prediction_columns = []
 
         with train_valid_iterator.frozen() as frozen_train_valid_iterator:
@@ -216,15 +204,15 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
             outp_dim = valid_ds.data.select(sf.max(valid_ds.target_column).alias("max")).first()
             outp_dim = outp_dim["max"] + 1
             self._prediction_role = NumericVectorOrArrayRole(
-                outp_dim, f"{self.prediction_feature}" + "_{}", np.float32, force_input=True, prob=True
+                outp_dim, f"{self.prediction_feature}" + "_{}", force_input=True, prob=True
             )
         elif self.task.name == "binary":
             outp_dim = 2
             self._prediction_role = NumericVectorOrArrayRole(
-                outp_dim, f"{self.prediction_feature}" + "_{}", np.float32, force_input=True, prob=True
+                outp_dim, f"{self.prediction_feature}" + "_{}", force_input=True, prob=True
             )
         else:
-            self._prediction_role = NumericRole(np.float32, force_input=True, prob=False)
+            self._prediction_role = NumericRole(force_input=True)
 
         self.n_classes = outp_dim
 
@@ -295,7 +283,8 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
                 runtime_settings = {"num_tasks": slot.num_tasks, "num_threads": slot.num_threads_per_executor}
                 train_ds = slot.dataset
 
-                mdl, vpred, _ = self.fit_predict_single_fold(mdl_pred_col, self.validation_column, train_ds, runtime_settings)
+                mdl, vpred, _ \
+                    = self.fit_predict_single_fold(mdl_pred_col, self.validation_column, train_ds, runtime_settings)
                 vpred = vpred.select(SparkDataset.ID_COLUMN, train_ds.target_column, mdl_pred_col)
 
                 return i, mdl, vpred, mdl_pred_col
