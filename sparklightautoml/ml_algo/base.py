@@ -306,7 +306,7 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
             for i, _ in enumerate(train_valid_iterator)
         ]
 
-        results = self.computations_manager.compute2(train_valid_iterator.train, fit_tasks)
+        results = self.computations_manager.compute(train_valid_iterator.train, fit_tasks)
 
         # TODO: PARALLEL - is it a correct place for running? incorrect functioning in the sequential case
         self.timer.write_run_info()

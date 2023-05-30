@@ -141,7 +141,7 @@ class SparkMLPipeline(LAMAMLPipeline, TransformerInputOutputRoles):
                 for ml_algo, param_tuner, force_calc in zip(self._ml_algos, self.params_tuners, self.force_calc)
             ]
 
-            results = self._computations_manager.compute2(fit_tasks, workload_type=WorkloadType.ml_algos)
+            results = self._computations_manager.compute(fit_tasks, workload_type=WorkloadType.ml_algos)
 
             self.ml_algos.extend([ml_algo for ml_algo, _ in results])
             preds = [pred for _, pred in results]

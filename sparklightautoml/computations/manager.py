@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing.pool import ThreadPool
+from queue import Queue
 from typing import Callable, Optional, Iterable, Any, Dict, Tuple, cast, Union
 from typing import TypeVar, List
 
@@ -210,7 +211,7 @@ class ComputationalJobManager(ABC):
         ...
 
     @abstractmethod
-    def compute2(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+    def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         ...
 
     @abstractmethod
@@ -246,14 +247,64 @@ class ComputationManagerFactory:
         pass
 
 
-class ParallelComputationsManagerComputational(ComputationalJobManager):
-    def __init__(self,
-                 ml_pipes_pool_size: int = 1,
-                 ml_algos_pool_size: int = 1,
-                 job_pool_size: int = 1):
+class SequentialComputationalJobManager(ComputationalJobManager):
+    def __init__(self, default_slot_size: Optional[SlotSize] = None):
+        super(SequentialComputationalJobManager, self).__init__()
+        self._default_slot_size = default_slot_size
+        self._dataset: Optional[SparkDataset] = None
+
+    @contextmanager
+    def session(self, dataset: SparkDataset):
+        self._dataset = dataset
+        yield
+        self._dataset = None
+
+    def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+        return [task(ComputingSlot(dataset)) for task in tasks]
+
+    def allocate(self) -> ComputingSlot:
+        assert self._dataset is not None, "Cannot allocate slots without session"
+        return ComputingSlot(self._dataset)
+
+
+class ParallelComputationalJobManager(ComputationalJobManager):
+    def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = True):
         # doing it, because ParallelComputations Manager should be deepcopy-able
-        create_pools(ml_pipes_pool_size, ml_algos_pool_size, job_pool_size)
-        self._default_slot_size = None
+        create_pools(1, 1, parallelism)
+        self._parallelism = parallelism
+        self._use_location_prefs_mode = use_location_prefs_mode
+        self._available_computing_slots_queue: Optional[Queue] = None
+
+    def session(self, dataset: SparkDataset):
+        # TODO: PARALLEL - add id to slots
+        with self._prepare_datasets(dataset) as computing_slots:
+            self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
+            for cslot in computing_slots:
+                self._available_computing_slots_queue.put(cslot)
+            yield
+            self._available_computing_slots_queue = None
+
+    def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+        with self.session(dataset):
+            pool = self._get_pool()
+
+            # TODO: PARALLEL - Exception catcher should be added here
+            # TODO: PARALLEL - Can be simplified
+            ptasks = list(map(inheritable_thread_target, tasks))
+            results = list(pool.imap_unordered(lambda f: f(self.allocate()), ptasks))
+            results = sorted(
+                (result for result in results if result),
+                key=lambda x: x[0]
+            )
+
+        return results
+
+    def allocate(self) -> ComputingSlot:
+        return self._available_computing_slots_queue.get()
+
+    def _prepare_dataset(self, dataset: SparkDataset) -> SparkDataset:
+        raise NotImplementedError()
+
 
     def _get_pool(self, pool_type: WorkloadType) -> Optional[ThreadPool]:
         return get_pool(pool_type)
@@ -266,18 +317,7 @@ class ParallelComputationsManagerComputational(ComputationalJobManager):
     def default_slot_size(self) -> Optional[SlotSize]:
         return self._default_slot_size
 
-    def session(self, tasks: List[Callable[[], T]], workload_type: WorkloadType = WorkloadType.job) -> List[T]:
-        pool = self._get_pool(workload_type)
 
-        if not pool:
-            return _compute_sequential(tasks)
-
-        ptasks = list(map(inheritable_thread_target, tasks))
-        results = list(pool.imap_unordered(lambda f: f(), ptasks))
-        results = sorted(
-            (result for result in results if result),
-            key=lambda x: x[0]
-        )
 
         return results
 
@@ -330,25 +370,14 @@ class ParallelComputationsManagerComputational(ComputationalJobManager):
 
         return slot_size, _train_slots
 
-
-class SequentialComputationsManagerComputational(ComputationalJobManager):
-    def __init__(self, default_slot_size: Optional[SlotSize] = None):
-        super(SequentialComputationsManagerComputational, self).__init__()
-        self._default_slot_size = default_slot_size
-
-    @property
-    def default_slot_size(self) -> Optional[SlotSize]:
-        return self._default_slot_size
-
-    @property
-    def can_support_slots(self) -> bool:
-        return False
-
-    def slots(self, dataset: SparkDataset, parallelism: int, pool_type: WorkloadType) -> ComputingSession:
-        raise NotImplementedError("Not supported by this computational manager")
-
-    def session(self, tasks: list[Callable[[], T]], workload_type: WorkloadType = WorkloadType.job) -> List[T]:
-        return _compute_sequential(tasks)
+    @contextmanager
+    def _prepare_datasets(self, dataset) -> List[ComputingSlot]:
+        if self._use_location_prefs_mode:
+            # TODO: PARALLEL - add try .. finally to clean computing slots datasets
+            raise NotImplementedError()
+            # TODO: PARALLEL - clean computing slots datasets
+        else:
+            yield [ComputingSlot(dataset) for _ in range(self._parallelism)]
 
 
 def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = None):
