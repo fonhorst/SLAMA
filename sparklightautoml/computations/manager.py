@@ -1,8 +1,6 @@
 import logging
 import math
 import multiprocessing
-import threading
-import time
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -29,9 +27,11 @@ ENV_VAR_SLAMA_COMPUTATIONS_MANAGER = "SLAMA_COMPUTATIONS_MANAGER"
 T = TypeVar("T")
 S = TypeVar("S", bound='Slot')
 
-
-ComputationsStagesSettings = Union[Tuple[str, int], Dict[str, Any], 'AutoMLStageManager']
+# either named profile and parallelism or parallelism settings or factory
 AutoMLComputationsSettings = Union[Tuple[str, int], Dict[str, Any], 'ComputationManagerFactory']
+# either parallelism degree or manager
+ComputationsStagesSettings = Union[int, 'AutoMLStageManager']
+# either parallelism settings or manager
 ComputationsSettings = Union[Dict[str, Any], 'ComputationalJobManager']
 
 
@@ -39,25 +39,6 @@ class WorkloadType(Enum):
     ml_pipelines = "ml_pipelines"
     ml_algos = "ml_algos"
     job = "job"
-
-
-__pools__: Optional[Dict[WorkloadType, ThreadPool]] = None
-
-
-def create_pools(ml_pipes_pool_size: int = 1, ml_algos_pool_size: int = 1, job_pool_size: int = 1):
-    global __pools__
-
-    assert __pools__ is None, "Cannot recreate already existing thread pools"
-
-    __pools__ = {
-        WorkloadType.ml_pipelines: ThreadPool(processes=ml_pipes_pool_size) if ml_pipes_pool_size > 1 else None,
-        WorkloadType.ml_algos: ThreadPool(processes=ml_algos_pool_size) if ml_algos_pool_size > 1 else None,
-        WorkloadType.job: ThreadPool(processes=job_pool_size) if job_pool_size > 1 else None
-    }
-
-
-def get_pool(pool_type: WorkloadType) -> Optional[ThreadPool]:
-    return __pools__.get(pool_type, None)
 
 
 # noinspection PyUnresolvedReferences
@@ -81,44 +62,38 @@ def get_executors_cores() -> int:
     return cores
 
 
-def _compute_sequential(tasks: List[Callable[[], T]]) -> List[T]:
-    return [task() for task in tasks]
-
-
 def build_named_parallelism_settings(config_name: str, parallelism: int):
     parallelism_config = {
         "no_parallelism": None,
         "intra_mlpipe_parallelism": {
-            WorkloadType.ml_pipelines.name: 1,
-            WorkloadType.ml_algos.name: 1,
-            WorkloadType.job.name: parallelism,
+            "ml_pipelines": 1,
+            "ml_algos": 1,
+            "selector": parallelism,
             "tuner": parallelism,
-            "linear_l2": {},
+            "linear_l2": None,
             "lgb": {
                 "parallelism": parallelism,
-                "use_barrier_execution_mode": True,
-                "experimental_parallel_mode": False
+                "use_location_prefs_mode": False
             }
         },
         "intra_mlpipe_parallelism_with_experimental_features": {
-            WorkloadType.ml_pipelines.name: 1,
-            WorkloadType.ml_algos.name: 1,
-            WorkloadType.job.name: parallelism,
+            "ml_pipelines": 1,
+            "ml_algos": 1,
+            "selector": parallelism,
             "tuner": parallelism,
-            "linear_l2": {},
+            "linear_l2": None,
             "lgb": {
                 "parallelism": parallelism,
-                "use_barrier_execution_mode": True,
-                "experimental_parallel_mode": True
+                "use_location_prefs_mode": True
             }
         },
         "mlpipe_level_parallelism": {
-            WorkloadType.ml_pipelines.name: parallelism,
-            WorkloadType.ml_algos.name: 1,
-            WorkloadType.job.name: 1,
+            "ml_pipelines": parallelism,
+            "ml_algos": 1,
+            "selector": 1,
             "tuner": 1,
-            "linear_l2": {},
-            "lgb": {}
+            "linear_l2": None,
+            "lgb": None
         }
     }
 
@@ -127,6 +102,43 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
         f"Only the following ones are supoorted at the moment: {list(parallelism_config.keys())}"
 
     return parallelism_config[config_name]
+
+
+class ComputationManagerFactory:
+    def __init__(self, computations_settings: Optional[Tuple[str, int], Dict[str, Any]] = None):
+        super(ComputationManagerFactory, self).__init__()
+        computations_settings = computations_settings or ("no_parallelism", -1)
+
+        if isinstance(computations_settings, Tuple):
+            mode, parallelism = computations_settings
+            self._computations_settings = build_named_parallelism_settings(mode, parallelism)
+        else:
+            self._computations_settings = computations_settings
+
+        self._ml_pipelines_parallelism = int(self._computations_settings.get('ml_pipelines', '1'))
+        self._ml_algos_parallelism = int(self._computations_settings.get('ml_algos', '1'))
+        self._selector_parallelism = int(self._computations_settings.get('selector', '1'))
+        self._tuner_parallelism = int(self._computations_settings.get('tuner', '1'))
+        self._linear_l2_params = self._computations_settings.get('linear_l2', None)
+        self._lgb_params = self._computations_settings.get('lgb', None)
+
+    def get_ml_pipelines_manager(self) -> 'AutoMLStageManager':
+        return build_computations_stage_manager(self._ml_pipelines_parallelism)
+
+    def get_ml_algo_manager(self) -> 'AutoMLStageManager':
+        return build_computations_stage_manager(self._ml_algos_parallelism)
+
+    def get_selector_manager(self) -> 'AutoMLStageManager':
+        return build_computations_stage_manager(self._selector_parallelism)
+
+    def get_tuning_manager(self) -> 'ComputationalJobManager':
+        return build_computations_manager({"parallelism": self._tuner_parallelism})
+
+    def get_lgb_manager(self) -> 'ComputationalJobManager':
+        return build_computations_manager(self._lgb_params)
+
+    def get_linear_manager(self) -> 'ComputationalJobManager':
+        return build_computations_manager(self._linear_l2_params)
 
 
 @inherit_doc
@@ -149,53 +161,6 @@ class ComputingSlot:
     dataset: SparkDataset
     num_tasks: Optional[int] = None
     num_threads_per_executor: Optional[int] = None
-
-
-@dataclass
-class SlotSize:
-    num_tasks: int
-    num_threads_per_executor: int
-
-
-class ComputingSession(ABC):
-    @abstractmethod
-    @contextmanager
-    def allocate(self) -> ComputingSlot:
-        ...
-
-
-class ParallelSlotAllocator(ComputingSession):
-    def __init__(self, slot_size: SlotSize, slots: List[ComputingSlot], pool: ThreadPool):
-        assert len(slots) > 0
-        self._slot_size = slot_size
-        self._slots = slots
-        self._pool = pool
-        self._slots_lock = threading.Lock()
-
-    @property
-    def slot_size(self) -> SlotSize:
-        return self._slot_size
-
-    @contextmanager
-    def allocate(self) -> ComputingSlot:
-        try:
-            while True:
-                try:
-                    with self._slots_lock:
-                        free_slot = next((slot for slot in self._slots if slot.free))
-                        free_slot.free = False
-                    break
-                except StopIteration:
-                    logger.debug("No empty slot, sleeping and repeating again")
-                time.sleep(5)
-
-            yield free_slot
-
-            with self._slots_lock:
-                free_slot.free = True
-        except Exception as ex:
-            logger.error("Some bad exception happened", exc_info=1)
-            raise ex
 
 
 class AutoMLStageManager(ABC):
@@ -222,29 +187,6 @@ class ComputationalJobManager(ABC):
 
         """
         ...
-
-
-class ComputationManagerFactory:
-    def __init__(self, computations_settings: Optional[Dict[str, Any]] = None):
-        pass
-
-    def get_ml_pipelines_manager(self) -> AutoMLStageManager:
-        pass
-
-    def get_ml_algo_manager(self) -> AutoMLStageManager:
-        pass
-
-    def get_gbm_manager(self) -> ComputationalJobManager:
-        pass
-
-    def get_linear_manager(self) -> ComputationalJobManager:
-        pass
-
-    def get_tuning_manager(self) -> ComputationalJobManager:
-        pass
-
-    def get_selector_manager(self) -> ComputationalJobManager:
-        pass
 
 
 class SequentialComputationalJobManager(ComputationalJobManager):
@@ -381,21 +323,30 @@ class ParallelAutoMLStageManager(AutoMLStageManager):
         return self._pool.map(lambda task: task(), tasks)
 
 
-def build_computations_manager(computations_settings: ComputationsSettings = None) -> ComputationalJobManager:
-    if computations_settings and isinstance(computations_settings, ComputationalJobManager):
+def build_computations_manager(computations_settings: Optional[ComputationsSettings] = None) -> ComputationalJobManager:
+    if computations_settings is not None and isinstance(computations_settings, ComputationalJobManager):
         computations_manager = computations_settings
-    elif computations_settings:
-        # TODO: PARALLEL - validate params
-        # TODO: PARALLEL - build computations manager according to the params
-        computations_manager = SequentialComputationsManagerComputational()
+    elif computations_settings is not None:
+        assert isinstance(computations_settings, dict)
+        parallelism = int(computations_settings.get('parallelism', '1'))
+        use_location_prefs_mode = computations_settings.get('use_location_prefs_mode', False)
+        computations_manager = ParallelComputationalJobManager(parallelism, use_location_prefs_mode)
     else:
         computations_manager = SequentialComputationalJobManager()
 
     return computations_manager
 
 
-def default_computations_manager() -> ComputationalJobManager:
-    return SequentialComputationsManagerComputational()
+def build_computations_stage_manager(computations_stage_settings: Optional[ComputationsStagesSettings] = None) -> AutoMLStageManager:
+    if computations_stage_settings is not None and isinstance(computations_stage_settings, AutoMLStageManager):
+        computations_manager = computations_stage_settings
+    elif computations_stage_settings is not None:
+        assert isinstance(computations_stage_settings, int) and computations_stage_settings >= 1
+        computations_manager = ParallelAutoMLStageManager(parallelism=computations_stage_settings)
+    else:
+        computations_manager = SequentialAutoMLStageManager()
+
+    return computations_manager
 
 
 class _SlotBasedTVIter(SparkBaseTrainValidIterator):

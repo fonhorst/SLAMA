@@ -19,7 +19,8 @@ from pyspark.sql.session import SparkSession
 
 from .blend import SparkBlender, SparkBestModelSelector
 from ..computations.manager import WorkloadType, build_named_parallelism_settings, \
-    build_computations_manager, ComputationalJobManager, AutoMLStageManager, ComputationsStagesSettings
+    build_computations_manager, ComputationalJobManager, AutoMLStageManager, ComputationsStagesSettings, \
+    build_computations_stage_manager
 from ..dataset.base import SparkDataset, PersistenceLevel, PersistenceManager
 from ..dataset.persistence import PlainCachePersistenceManager
 from ..pipelines.base import TransformerInputOutputRoles
@@ -126,7 +127,7 @@ class SparkAutoML(TransformerInputOutputRoles):
         # TODO: PARALLEL - move to a separate function
         self._parallelism_settings = self._parse_parallelism_mode(computation_settings)
         self._computations_manager: Optional[AutoMLStageManager] =  \
-            build_computations_manager(self._parallelism_settings)
+            build_computations_stage_manager(computation_settings)
 
     @property
     def input_roles(self) -> Optional[RolesDict]:

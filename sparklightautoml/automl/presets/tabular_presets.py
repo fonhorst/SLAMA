@@ -1,7 +1,7 @@
 import logging
 import os
 from copy import deepcopy, copy
-from typing import Optional, Sequence, Iterable, Tuple, List, Union, Dict, Any
+from typing import Optional, Sequence, Iterable, Tuple, List
 
 import numpy as np
 from lightautoml.automl.presets.base import upd_params
@@ -26,7 +26,7 @@ from sparklightautoml.automl.presets.utils import (
     replace_month_in_date,
     replace_year_in_date,
 )
-from sparklightautoml.computations.manager import ComputationManagerFactory, AutoMLStageManager
+from sparklightautoml.computations.manager import ComputationManagerFactory
 from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
@@ -104,9 +104,9 @@ class SparkTabularAutoML(SparkAutoMLPreset):
         if config_path is None:
             config_path = os.path.join(base_dir, self._default_config_path)
 
-        # TODO: PARALLEL - parse computation_settings
-        computation_settings = computation_settings
-        self._computation_managers_factory = ComputationManagerFactory()
+        self._computation_managers_factory = computation_settings \
+            if isinstance(computation_settings, ComputationManagerFactory) \
+            else ComputationManagerFactory(computation_settings)
 
         super().__init__(task, timeout, memory_limit, cpu_limit, gpu_ids,
                          timing_params, config_path, self._computation_managers_factory.get_ml_pipelines_manager())
@@ -284,6 +284,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             force_calc=True,
             pre_selection=pre_selector,
             features_pipeline=linear_l2_feats,
+            computations_settings=self._computation_managers_factory.get_ml_algo_manager(),
             **self.nested_cv_params,
         )
         return linear_l2_pipe
@@ -330,7 +331,8 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             force_calc,
             pre_selection=pre_selector,
             features_pipeline=gbm_feats,
-            **self.nested_cv_params,
+            computations_settings=self._computation_managers_factory.get_ml_algo_manager(),
+            **self.nested_cv_params
         )
 
         return gbm_pipe
@@ -344,7 +346,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
             gbm_model = SparkBoostLGBM(
                 timer=gbm_timer,
-                computations_settings=self._computation_managers_factory.get_gbm_manager(),
+                computations_settings=self._computation_managers_factory.get_lgb_manager(),
                 **lgb_params
             )
         elif algo_key == "cb":
