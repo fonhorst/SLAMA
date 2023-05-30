@@ -270,10 +270,12 @@ class SequentialComputationalJobManager(ComputationalJobManager):
 class ParallelComputationalJobManager(ComputationalJobManager):
     def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = True):
         # doing it, because ParallelComputations Manager should be deepcopy-able
-        create_pools(1, 1, parallelism)
+        # create_pools(1, 1, parallelism)
+        assert parallelism >= 1
         self._parallelism = parallelism
         self._use_location_prefs_mode = use_location_prefs_mode
         self._available_computing_slots_queue: Optional[Queue] = None
+        self._pool = ThreadPool(processes=parallelism)
 
     def session(self, dataset: SparkDataset):
         # TODO: PARALLEL - add id to slots
@@ -286,25 +288,21 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
     def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         with self.session(dataset):
-            pool = self._get_pool()
+            def _task_wrap(task):
+                try:
+                    slot = self.allocate()
+                    return task(slot)
+                except:
+                    logger.error("Error in a compute thread", exc_info=True)
+                    raise
 
-            # TODO: PARALLEL - Exception catcher should be added here
-            # TODO: PARALLEL - Can be simplified
-            ptasks = list(map(inheritable_thread_target, tasks))
-            results = list(pool.imap_unordered(lambda f: f(self.allocate()), ptasks))
-            results = sorted(
-                (result for result in results if result),
-                key=lambda x: x[0]
-            )
+            results = self._pool.map(_task_wrap, map(inheritable_thread_target, tasks))
 
         return results
 
     def allocate(self) -> ComputingSlot:
+        assert self._available_computing_slots_queue is not None, "Cannot allocate slots without session"
         return self._available_computing_slots_queue.get()
-
-    # TODO: PARALLEL - need to fix working with pools
-    def _get_pool(self, pool_type: WorkloadType) -> Optional[ThreadPool]:
-        return get_pool(pool_type)
 
     @contextmanager
     def _make_computing_slots(self, dataset) -> List[ComputingSlot]:
@@ -365,6 +363,23 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             logger.debug(f"Preffered locations for slot #{i}: {pref_locs}")
 
         return dataset_slots
+
+
+class SequentialAutoMLStageManager(AutoMLStageManager):
+    def __init__(self):
+        super(SequentialAutoMLStageManager, self).__init__()
+
+    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        return [task() for task in tasks]
+
+
+class ParallelAutoMLStageManager(AutoMLStageManager):
+    def __init__(self, parallelism: int = 1):
+        super(ParallelAutoMLStageManager, self).__init__()
+        self._pool = ThreadPool(processes=parallelism)
+
+    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        return self._pool.map(lambda task: task(), tasks)
 
 
 def build_computations_manager(parallelism_settings: Optional[Dict[str, Any]] = None):
