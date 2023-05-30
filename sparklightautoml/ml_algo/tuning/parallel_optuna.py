@@ -7,7 +7,7 @@ from lightautoml.ml_algo.tuning.optuna import OptunaTuner
 from lightautoml.validation.base import HoldoutIterator
 
 from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputationalJobManager, \
-    SequentialComputationalJobManager
+    SequentialComputationalJobManager, ComputationsSettings, build_computations_manager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
@@ -23,12 +23,10 @@ class ParallelOptunaTuner(OptunaTuner):
                  fit_on_holdout: bool = True,
                  random_state: int = 42,
                  parallelism: int = 1,
-                 # TODO: PARALLEL - add proper argument here
-                 computations_manager: Optional[ComputationalJobManager] = None):
+                 computations_manager: Optional[ComputationsSettings] = None):
         super().__init__(timeout, n_trials, direction, fit_on_holdout, random_state)
         self._parallelism = parallelism
-        # TODO: PARALLEL - add proper construction here
-        self._computations_manager = computations_manager
+        self._computations_manager = build_computations_manager(computations_settings=computations_manager)
 
     def fit(self, ml_algo: SparkTabularMLAlgo, train_valid_iterator: Optional[SparkBaseTrainValidIterator] = None) \
             -> Tuple[Optional[SparkTabularMLAlgo], Optional[SparkDataset]]:
@@ -110,14 +108,16 @@ class ParallelOptunaTuner(OptunaTuner):
         sampler = optuna.samplers.TPESampler(seed=self.random_state)
         self.study = optuna.create_study(direction=self.direction, sampler=sampler)
 
-        with self._computations_manager.session(train_valid_iterator.train):
-            # TODO: PARALLEL - need to set computations manager to None here
-            ml_algo = deepcopy(ml_algo)
-            ml_algo.computations_manager = SequentialComputationalJobManager()
+        # prepare correct ml_algo to run with optuna
+        cm = ml_algo.computations_manager
+        trial_ml_algo = deepcopy(ml_algo)
+        ml_algo.computations_manager = cm
+        trial_ml_algo.computations_manager = SequentialComputationalJobManager()
 
+        with self._computations_manager.session(train_valid_iterator.train):
             self.study.optimize(
                 func=self._get_objective(
-                    ml_algo=ml_algo,
+                    ml_algo=trial_ml_algo,
                     estimated_n_trials=self.estimated_n_trials,
                     train_valid_iterator=_SlotInitiatedTVIter(self._computations_manager, train_valid_iterator),
                 ),
@@ -126,41 +126,3 @@ class ParallelOptunaTuner(OptunaTuner):
                 timeout=self.timeout,
                 callbacks=[update_trial_time]
             )
-
-# TODO: PARALLEL - remove it later
-# class SlotBasedParallelOptunaTuner(ParallelOptunaTuner):
-#     def __init__(self,
-#                  computations_manager: ComputationsManager,
-#                  timeout: Optional[int] = 1000,
-#                  n_trials: Optional[int] = 100,
-#                  direction: Optional[str] = "maximize",
-#                  fit_on_holdout: bool = True,
-#                  random_state: int = 42,
-#                  parallelism: int = 1):
-#         super().__init__(timeout, n_trials, direction, fit_on_holdout, random_state, parallelism)
-#         self._computations_manager = computations_manager
-#
-#         assert self._computations_manager.can_support_slots, "The computation manager should support slots allocation!"
-#
-#     def _optimize(self, ml_algo: SparkTabularMLAlgo, train_valid_iterator: SparkBaseTrainValidIterator,
-#                   update_trial_time: Callable[[optuna.study.Study, optuna.trial.FrozenTrial], None]):
-#         sampler = optuna.samplers.TPESampler(seed=self.random_state)
-#         self.study = optuna.create_study(direction=self.direction, sampler=sampler)
-#
-#         with self._computations_manager.slots(train_valid_iterator.train,
-#                                               parallelism=self._parallelism, pool_type=WorkloadType.job) as allocator:
-#             allocator: ComputingSession = allocator
-#             ml_algo = deepcopy(ml_algo)
-#             ml_algo.computations_manager = SequentialComputationsManager()
-#
-#             self.study.optimize(
-#                 func=self._get_objective(
-#                     ml_algo=ml_algo,
-#                     estimated_n_trials=self.estimated_n_trials,
-#                     train_valid_iterator=_SlotInitiatedTVIter(allocator, train_valid_iterator),
-#                 ),
-#                 n_jobs=self._parallelism,
-#                 n_trials=self.n_trials,
-#                 timeout=self.timeout,
-#                 callbacks=[update_trial_time]
-#             )
