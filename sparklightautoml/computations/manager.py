@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from multiprocessing.pool import ThreadPool
 from queue import Queue
-from typing import Callable, Optional, Iterable, Any, Dict, Tuple, cast, Union
+from typing import Callable, Optional, Iterable, Any, Dict, Tuple, Union
 from typing import TypeVar, List
 
 from pyspark import inheritable_thread_target, SparkContext, keyword_only
@@ -18,7 +18,7 @@ from pyspark.ml.wrapper import JavaTransformer
 from pyspark.sql import SparkSession
 
 from sparklightautoml.dataset.base import SparkDataset
-from sparklightautoml.validation.base import SparkBaseTrainValidIterator, TrainVal
+from sparklightautoml.validation.base import SparkBaseTrainValidIterator
 
 logger = logging.getLogger(__name__)
 
@@ -349,68 +349,21 @@ def build_computations_stage_manager(computations_stage_settings: Optional[Compu
     return computations_manager
 
 
-class _SlotBasedTVIter(SparkBaseTrainValidIterator):
-    def __init__(self, slots: Callable[[], ComputingSlot], tviter: SparkBaseTrainValidIterator):
-        super().__init__(None)
-        self._slots = slots
-        self._tviter = tviter
-        self._curr_pos = 0
-
-    def __iter__(self) -> Iterable:
-        self._curr_pos = 0
-        return self
-
-    def __len__(self) -> Optional[int]:
-        return len(self._tviter)
-
-    def __next__(self) -> TrainVal:
-        with self._slots() as slot:
-            tviter = deepcopy(self._tviter)
-            tviter.train = slot.dataset
-
-            self._curr_pos += 1
-
-            try:
-                curr_tv = None
-                for i in range(self._curr_pos):
-                    curr_tv = next(tviter)
-            except StopIteration:
-                self._curr_pos = 0
-                raise StopIteration()
-
-        return curr_tv
-
-    def convert_to_holdout_iterator(self):
-        return _SlotBasedTVIter(
-            self._slots,
-            cast(SparkBaseTrainValidIterator, self._tviter.convert_to_holdout_iterator())
-        )
-
-    def freeze(self) -> 'SparkBaseTrainValidIterator':
-        raise NotImplementedError()
-
-    def unpersist(self, skip_val: bool = False):
-        raise NotImplementedError()
-
-    def get_validation_data(self) -> SparkDataset:
-        return self._tviter.get_validation_data()
-
-
 class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
     def __len__(self) -> Optional[int]:
         return len(self._tviter)
 
     def convert_to_holdout_iterator(self):
-        return _SlotInitiatedTVIter(self._slot_allocator, self._tviter.convert_to_holdout_iterator())
+        return _SlotInitiatedTVIter(self._computations_manager, self._tviter.convert_to_holdout_iterator())
 
-    def __init__(self, slot_allocator: ComputationalJobManager, tviter: SparkBaseTrainValidIterator):
+    def __init__(self, computations_manager: ComputationalJobManager, tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
-        self._slot_allocator = slot_allocator
+        self._computations_manager = computations_manager
         self._tviter = deepcopy(tviter)
 
     def __iter__(self) -> Iterable:
         def _iter():
-            with self._slot_allocator.allocate() as slot:
+            with self._computations_manager.allocate() as slot:
                 tviter = deepcopy(self._tviter)
                 tviter.train = slot.dataset
                 for elt in tviter:
