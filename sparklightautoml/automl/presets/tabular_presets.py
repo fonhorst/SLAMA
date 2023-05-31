@@ -240,7 +240,6 @@ class SparkTabularAutoML(SparkAutoMLPreset):
                 selection_gbm = SparkBoostLGBM(timer=sel_timer_1, **lgb_params)
                 selection_gbm.set_prefix("Selector")
 
-                # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
                 importance = SparkNpPermutationImportanceEstimator(
                     computations_settings=self._computation_managers_factory.get_selector_manager()
                 )
@@ -268,7 +267,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
         linear_l2_params = {
             **self.linear_l2_params
         }
-        # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
+
         linear_l2_model = SparkLinearLBFGS(
             timer=linear_l2_timer,
             computations_settings=self._computation_managers_factory.get_linear_manager(),
@@ -306,10 +305,6 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             gbm_timer = self.timer.get_task_timer(algo_key, time_score)
             gbm_model, lgb_params = self._get_boosting_model(algo_key, gbm_timer)
 
-            # lgb_params.get('experimental_parallel_mode', False)
-
-            # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
-
             if tuned:
                 gbm_model.set_prefix("Tuned")
 
@@ -343,7 +338,7 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             lgb_params = {
                 **self.lgb_params
             }
-            # TODO: PARALLEL - computations manager is not correct here, need to respect experimental_mode setting
+
             gbm_model = SparkBoostLGBM(
                 timer=gbm_timer,
                 computations_settings=self._computation_managers_factory.get_lgb_manager(),

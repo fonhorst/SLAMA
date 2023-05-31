@@ -29,6 +29,7 @@ ComputationsSettings = Union[Dict[str, Any], 'ComputationalJobManager']
 
 @dataclass
 class ComputationSlot:
+    id: str
     dataset: Optional[SparkDataset] = None
     num_tasks: Optional[int] = None
     num_threads_per_executor: Optional[int] = None
@@ -87,25 +88,22 @@ class SequentialComputationsManager(ComputationsManager):
 
     def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputationSlot], T]) \
             -> List[T]:
-        return [task(i, ComputationSlot(train)) for i, train in enumerate(train_val_iter)]
+        return [task(i, ComputationSlot(f"{i}", train)) for i, train in enumerate(train_val_iter)]
 
     def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
         return [task() for task in tasks]
 
     def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputationSlot], T]]) -> List[T]:
-        return [task(ComputationSlot(dataset)) for task in tasks]
+        return [task(ComputationSlot("0", dataset)) for task in tasks]
 
     @contextmanager
     def allocate(self) -> ComputationSlot:
         assert self._dataset is not None, "Cannot allocate slots without session"
-        yield ComputationSlot(self._dataset)
+        yield ComputationSlot("0", self._dataset)
 
 
 class ParallelComputationsManager(ComputationsManager):
     def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = False):
-        # TODO: PARALLEL - accept a thread pool coming from above
-        # doing it, because ParallelComputations Manager should be deepcopy-able
-        # create_pools(1, 1, parallelism)
         assert parallelism >= 1
         self._parallelism = parallelism
         self._use_location_prefs_mode = use_location_prefs_mode
@@ -119,8 +117,6 @@ class ParallelComputationsManager(ComputationsManager):
 
     @contextmanager
     def session(self, dataset: Optional[SparkDataset] = None):
-        # TODO: PARALLEL - make this method thread safe by thread locking
-        # TODO: PARALLEL - add id to slots
         with self._session_lock:
             with self._make_computing_slots(dataset) as computing_slots:
                 self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
@@ -176,7 +172,7 @@ class ParallelComputationsManager(ComputationsManager):
                     for cslot in computing_slots:
                         cslot.dataset.unpersist()
         else:
-            yield [ComputationSlot(dataset) for _ in range(self._parallelism)]
+            yield [ComputationSlot(f"i", dataset) for i in range(self._parallelism)]
 
     def _coalesced_dataset_copies_into_preffered_locations(self, dataset: SparkDataset) \
             -> List[ComputationSlot]:
@@ -215,6 +211,7 @@ class ParallelComputationsManager(ComputationsManager):
                                        name=f"CoalescedForPrefLocs_{dataset.name}")
 
             dataset_slots.append(ComputationSlot(
+                id=f"{i}",
                 dataset=coalesced_dataset,
                 num_tasks=num_tasks,
                 num_threads_per_executor=num_threads_per_executor

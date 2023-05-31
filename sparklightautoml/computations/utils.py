@@ -69,8 +69,11 @@ class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
         return len(self._tviter)
 
     def __getitem__(self, fold_id: int) -> SparkDataset:
-        # TODO: PARALLEL - incorrect implementation
-        return self._tviter[fold_id]
+        with self._computations_manager.allocate() as slot:
+            self._tviter.train = slot.dataset
+            dataset = self._tviter[fold_id]
+            self._tviter = None
+        return dataset
 
     def __next__(self):
         raise NotImplementedError("NotSupportedMethod")
