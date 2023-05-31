@@ -4,7 +4,7 @@ import multiprocessing
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from copy import deepcopy
+from copy import deepcopy, copy
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing.pool import ThreadPool
@@ -60,6 +60,17 @@ def get_executors_cores() -> int:
         cores = int(SparkSession.getActiveSession().conf.get("spark.executor.cores", "1"))
 
     return cores
+
+
+def inheritable_thread_target_with_exceptions_catcher(f):
+    def _func():
+        try:
+            return f()
+        except:
+            logger.error("Error in a compute thread", exc_info=True)
+            raise
+
+    return inheritable_thread_target(_func)
 
 
 def build_named_parallelism_settings(config_name: str, parallelism: int):
@@ -176,6 +187,10 @@ class ComputationalJobManager(ABC):
         ...
 
     @abstractmethod
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[ComputingSlot], T]) -> List[T]:
+        ...
+
+    @abstractmethod
     def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         ...
 
@@ -227,23 +242,37 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             yield
             self._available_computing_slots_queue = None
 
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[ComputingSlot], T]) -> List[T]:
+        old_train = train_val_iter.train
+        train_val_iter.train = None
+        tv_iter = deepcopy(train_val_iter)
+        train_val_iter.train = old_train
+
+        with self.session(train_val_iter.train):
+            def _task_wrap(fold_id: int):
+                with self.allocate() as slot:
+                    local_tv_iter = deepcopy(tv_iter)
+                    local_tv_iter.train = slot.dataset
+                    slot = deepcopy(slot)
+                    slot.dataset = local_tv_iter[fold_id]
+                    return task(slot)
+
+            fold_ids = list(range(len(train_val_iter)))
+            return self._map(_task_wrap, fold_ids)
+
     def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         with self.session(dataset):
             def _task_wrap(task):
-                try:
-                    slot = self.allocate()
+                with self.allocate() as slot:
                     return task(slot)
-                except:
-                    logger.error("Error in a compute thread", exc_info=True)
-                    raise
+            return self._map(_task_wrap, tasks)
 
-            results = self._pool.map(_task_wrap, map(inheritable_thread_target, tasks))
-
-        return results
-
+    @contextmanager
     def allocate(self) -> ComputingSlot:
         assert self._available_computing_slots_queue is not None, "Cannot allocate slots without session"
-        return self._available_computing_slots_queue.get()
+        slot = self._available_computing_slots_queue.get()
+        yield slot
+        self._available_computing_slots_queue.put(slot)
 
     @contextmanager
     def _make_computing_slots(self, dataset) -> List[ComputingSlot]:
@@ -305,6 +334,10 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
         return dataset_slots
 
+    def _map(self, func: Callable[[], T], tasks: List[Any]) -> List[T]:
+        return self._pool.map(inheritable_thread_target_with_exceptions_catcher(func), tasks)
+
+
 
 class SequentialAutoMLStageManager(AutoMLStageManager):
     def __init__(self):
@@ -350,26 +383,30 @@ def build_computations_stage_manager(computations_stage_settings: Optional[Compu
 
 
 class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
-    def __len__(self) -> Optional[int]:
-        return len(self._tviter)
-
-    def convert_to_holdout_iterator(self):
-        return _SlotInitiatedTVIter(self._computations_manager, self._tviter.convert_to_holdout_iterator())
-
     def __init__(self, computations_manager: ComputationalJobManager, tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
         self._computations_manager = computations_manager
+        # TODO: PARALLEL - replace it with 'with'-expression
+        old_train = tviter.train
+        tviter.train = None
         self._tviter = deepcopy(tviter)
+        tviter.train = old_train
 
     def __iter__(self) -> Iterable:
         def _iter():
             with self._computations_manager.allocate() as slot:
-                tviter = deepcopy(self._tviter)
-                tviter.train = slot.dataset
-                for elt in tviter:
+                self._tviter.train = slot.dataset
+                for elt in self._tviter:
                     yield elt
+                self._tviter = None
 
         return _iter()
+
+    def __len__(self) -> Optional[int]:
+        return len(self._tviter)
+
+    def __getitem__(self, fold_id: int) -> SparkDataset:
+        return self._tviter[fold_id]
 
     def __next__(self):
         raise NotImplementedError("NotSupportedMethod")
@@ -382,3 +419,6 @@ class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
 
     def get_validation_data(self) -> SparkDataset:
         return self._tviter.get_validation_data()
+
+    def convert_to_holdout_iterator(self):
+        return _SlotInitiatedTVIter(self._computations_manager, self._tviter.convert_to_holdout_iterator())
