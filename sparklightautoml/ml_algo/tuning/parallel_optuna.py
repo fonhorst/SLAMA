@@ -6,8 +6,8 @@ import optuna
 from lightautoml.ml_algo.tuning.optuna import OptunaTuner
 from lightautoml.validation.base import HoldoutIterator
 
-from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputationalJobManager, \
-    SequentialComputationalJobManager, ComputationsSettings, build_computations_manager
+from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputationsManager, \
+    SequentialComputationsManager, ComputationsSettings, build_computations_manager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
@@ -112,7 +112,7 @@ class ParallelOptunaTuner(OptunaTuner):
         cm = ml_algo.computations_manager
         trial_ml_algo = deepcopy(ml_algo)
         ml_algo.computations_manager = cm
-        trial_ml_algo.computations_manager = SequentialComputationalJobManager()
+        trial_ml_algo.computations_manager = SequentialComputationsManager()
 
         with self._computations_manager.session(train_valid_iterator.train):
             self.study.optimize(

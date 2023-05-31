@@ -30,8 +30,6 @@ S = TypeVar("S", bound='Slot')
 
 # either named profile and parallelism or parallelism settings or factory
 AutoMLComputationsSettings = Union[Tuple[str, int], Dict[str, Any], 'ComputationManagerFactory']
-# either parallelism degree or manager
-ComputationsStagesSettings = Union[int, 'AutoMLStageManager']
 # either parallelism settings or manager
 ComputationsSettings = Union[Dict[str, Any], 'ComputationalJobManager']
 
@@ -84,36 +82,36 @@ def deecopy_tviter_without_dataset(tv_iter: SparkBaseTrainValidIterator) -> Spar
 
 def build_named_parallelism_settings(config_name: str, parallelism: int):
     parallelism_config = {
-        "no_parallelism": None,
+        "no_parallelism": {},
         "intra_mlpipe_parallelism": {
-            "ml_pipelines": 1,
-            "ml_algos": 1,
-            "selector": parallelism,
-            "tuner": parallelism,
-            "linear_l2": None,
+            "ml_pipelines": {"parallelism": 1},
+            "ml_algos": {"parallelism": 1},
+            "selector": {"parallelism": parallelism},
+            "tuner": {"parallelism": parallelism},
+            "linear_l2": {"parallelism": parallelism},
             "lgb": {
                 "parallelism": parallelism,
                 "use_location_prefs_mode": False
             }
         },
-        "intra_mlpipe_parallelism_with_experimental_features": {
-            "ml_pipelines": 1,
-            "ml_algos": 1,
-            "selector": parallelism,
-            "tuner": parallelism,
-            "linear_l2": None,
+        "intra_mlpipe_parallelism_with_location_pres_mode": {
+            "ml_pipelines": {"parallelism": 1},
+            "ml_algos": {"parallelism": 1},
+            "selector": {"parallelism": parallelism},
+            "tuner": {"parallelism": parallelism},
+            "linear_l2": {"parallelism": parallelism},
             "lgb": {
                 "parallelism": parallelism,
                 "use_location_prefs_mode": True
             }
         },
         "mlpipe_level_parallelism": {
-            "ml_pipelines": parallelism,
-            "ml_algos": 1,
-            "selector": 1,
-            "tuner": 1,
-            "linear_l2": None,
-            "lgb": None
+            "ml_pipelines": {"parallelism": parallelism},
+            "ml_algos": {"parallelism": 1},
+            "selector": {"parallelism": 1},
+            "tuner": {"parallelism": 1},
+            "linear_l2": {"parallelism": 1},
+            "lgb": {"parallelism": 1}
         }
     }
 
@@ -125,55 +123,18 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
 
 
 def build_computations_manager(computations_settings: Optional[ComputationsSettings] = None) \
-        -> 'ComputationalJobManager':
-    if computations_settings is not None and isinstance(computations_settings, ComputationalJobManager):
+        -> 'ComputationsManager':
+    if computations_settings is not None and isinstance(computations_settings, ComputationsManager):
         computations_manager = computations_settings
     elif computations_settings is not None:
         assert isinstance(computations_settings, dict)
         parallelism = int(computations_settings.get('parallelism', '1'))
         use_location_prefs_mode = computations_settings.get('use_location_prefs_mode', False)
-        computations_manager = ParallelComputationalJobManager(parallelism, use_location_prefs_mode)
+        computations_manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     else:
-        computations_manager = SequentialComputationalJobManager()
+        computations_manager = SequentialComputationsManager()
 
     return computations_manager
-
-
-class ComputationManagerFactory:
-    def __init__(self, computations_settings: Optional[Tuple[str, int], Dict[str, Any]] = None):
-        super(ComputationManagerFactory, self).__init__()
-        computations_settings = computations_settings or ("no_parallelism", -1)
-
-        if isinstance(computations_settings, Tuple):
-            mode, parallelism = computations_settings
-            self._computations_settings = build_named_parallelism_settings(mode, parallelism)
-        else:
-            self._computations_settings = computations_settings
-
-        self._ml_pipelines_parallelism = int(self._computations_settings.get('ml_pipelines', '1'))
-        self._ml_algos_parallelism = int(self._computations_settings.get('ml_algos', '1'))
-        self._selector_parallelism = int(self._computations_settings.get('selector', '1'))
-        self._tuner_parallelism = int(self._computations_settings.get('tuner', '1'))
-        self._linear_l2_params = self._computations_settings.get('linear_l2', None)
-        self._lgb_params = self._computations_settings.get('lgb', None)
-
-    def get_ml_pipelines_manager(self) -> 'ComputationalJobManager':
-        return build_computations_manager({"parallelism": self._ml_pipelines_parallelism})
-
-    def get_ml_algo_manager(self) -> 'ComputationalJobManager':
-        return build_computations_manager({"parallelism": self._ml_algos_parallelism})
-
-    def get_selector_manager(self) -> 'ComputationalJobManager':
-        return build_computations_manager({"parallelism": self._selector_parallelism})
-
-    def get_tuning_manager(self) -> 'ComputationalJobManager':
-        return build_computations_manager({"parallelism": self._tuner_parallelism})
-
-    def get_lgb_manager(self) -> 'ComputationalJobManager':
-        return build_computations_manager(self._lgb_params)
-
-    def get_linear_manager(self) -> 'ComputationalJobManager':
-        return build_computations_manager(self._linear_l2_params)
 
 
 @inherit_doc
@@ -191,26 +152,63 @@ class PrefferedLocsPartitionCoalescerTransformer(JavaTransformer):
         )
 
 
+class ComputationsManagerFactory:
+    def __init__(self, computations_settings: Optional[Tuple[str, int], Dict[str, Any]] = None):
+        super(ComputationsManagerFactory, self).__init__()
+        computations_settings = computations_settings or ("no_parallelism", -1)
+
+        if isinstance(computations_settings, Tuple):
+            mode, parallelism = computations_settings
+            self._computations_settings = build_named_parallelism_settings(mode, parallelism)
+        else:
+            self._computations_settings = computations_settings
+
+        self._ml_pipelines_params = self._computations_settings.get('ml_pipelines', None)
+        self._ml_algos_params = self._computations_settings.get('ml_algos', None)
+        self._selector_params = self._computations_settings.get('selector', None)
+        self._tuner_params = self._computations_settings.get('tuner', None)
+        self._linear_l2_params = self._computations_settings.get('linear_l2', None)
+        self._lgb_params = self._computations_settings.get('lgb', None)
+
+    def get_ml_pipelines_manager(self) -> 'ComputationsManager':
+        return build_computations_manager(self._ml_pipelines_params)
+
+    def get_ml_algo_manager(self) -> 'ComputationsManager':
+        return build_computations_manager(self._ml_algos_params)
+
+    def get_selector_manager(self) -> 'ComputationsManager':
+        return build_computations_manager(self._selector_params)
+
+    def get_tuning_manager(self) -> 'ComputationsManager':
+        return build_computations_manager(self._tuner_params)
+
+    def get_lgb_manager(self) -> 'ComputationsManager':
+        return build_computations_manager(self._lgb_params)
+
+    def get_linear_manager(self) -> 'ComputationsManager':
+        return build_computations_manager(self._linear_l2_params)
+
+
 @dataclass
-class ComputingSlot:
+class ComputationSlot:
     dataset: Optional[SparkDataset] = None
     num_tasks: Optional[int] = None
     num_threads_per_executor: Optional[int] = None
 
 
-class ComputationalJobManager(ABC):
+class ComputationsManager(ABC):
     @contextmanager
     @abstractmethod
     def session(self, dataset: Optional[SparkDataset] = None):
         ...
 
     @abstractmethod
-    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T])\
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputationSlot], T])\
             -> List[T]:
         ...
 
     @abstractmethod
-    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) \
+    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputationSlot], T]]) \
             -> List[T]:
         ...
 
@@ -219,7 +217,7 @@ class ComputationalJobManager(ABC):
         ...
 
     @abstractmethod
-    def allocate(self) -> ComputingSlot:
+    def allocate(self) -> ComputationSlot:
         """
         Thread safe method
         Returns:
@@ -228,9 +226,9 @@ class ComputationalJobManager(ABC):
         ...
 
 
-class SequentialComputationalJobManager(ComputationalJobManager):
+class SequentialComputationsManager(ComputationsManager):
     def __init__(self):
-        super(SequentialComputationalJobManager, self).__init__()
+        super(SequentialComputationsManager, self).__init__()
         self._dataset: Optional[SparkDataset] = None
         self._session_lock = threading.Lock()
 
@@ -241,23 +239,23 @@ class SequentialComputationalJobManager(ComputationalJobManager):
             yield
             self._dataset = None
 
-    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T]) \
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputationSlot], T]) \
             -> List[T]:
-        return [task(i, ComputingSlot(train)) for i, train in enumerate(train_val_iter)]
+        return [task(i, ComputationSlot(train)) for i, train in enumerate(train_val_iter)]
 
     def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
         return [task() for task in tasks]
 
-    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
-        return [task(ComputingSlot(dataset)) for task in tasks]
+    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputationSlot], T]]) -> List[T]:
+        return [task(ComputationSlot(dataset)) for task in tasks]
 
     @contextmanager
-    def allocate(self) -> ComputingSlot:
+    def allocate(self) -> ComputationSlot:
         assert self._dataset is not None, "Cannot allocate slots without session"
-        yield ComputingSlot(self._dataset)
+        yield ComputationSlot(self._dataset)
 
 
-class ParallelComputationalJobManager(ComputationalJobManager):
+class ParallelComputationsManager(ComputationsManager):
     def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = True):
         # TODO: PARALLEL - accept a thread pool coming from above
         # doing it, because ParallelComputations Manager should be deepcopy-able
@@ -281,7 +279,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
                 yield
                 self._available_computing_slots_queue = None
 
-    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T])\
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputationSlot], T])\
             -> List[T]:
         tv_iter = deecopy_tviter_without_dataset(train_val_iter)
 
@@ -297,7 +295,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             fold_ids = list(range(len(train_val_iter)))
             return self._map_and_compute(_task_wrap, fold_ids)
 
-    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputationSlot], T]]) -> List[T]:
         with self.session(dataset):
             def _task_wrap(task):
                 with self.allocate() as slot:
@@ -310,14 +308,14 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             return self._compute(tasks)
 
     @contextmanager
-    def allocate(self) -> ComputingSlot:
+    def allocate(self) -> ComputationSlot:
         assert self._available_computing_slots_queue is not None, "Cannot allocate slots without session"
         slot = self._available_computing_slots_queue.get()
         yield slot
         self._available_computing_slots_queue.put(slot)
 
     @contextmanager
-    def _make_computing_slots(self, dataset: Optional[SparkDataset]) -> List[ComputingSlot]:
+    def _make_computing_slots(self, dataset: Optional[SparkDataset]) -> List[ComputationSlot]:
         if dataset is not None and self._use_location_prefs_mode:
             computing_slots = None
             try:
@@ -328,10 +326,10 @@ class ParallelComputationalJobManager(ComputationalJobManager):
                     for cslot in computing_slots:
                         cslot.dataset.unpersist()
         else:
-            yield [ComputingSlot(dataset) for _ in range(self._parallelism)]
+            yield [ComputationSlot(dataset) for _ in range(self._parallelism)]
 
     def _coalesced_dataset_copies_into_preffered_locations(self, dataset: SparkDataset) \
-            -> List[ComputingSlot]:
+            -> List[ComputationSlot]:
         logger.warning("Be aware for correct functioning slot-based computations "
                        "there should noy be any parallel computations from "
                        "different entities (other MLPipes, MLAlgo, etc).")
@@ -366,7 +364,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             coalesced_dataset.set_data(coalesced_data, coalesced_dataset.features, coalesced_dataset.roles,
                                        name=f"CoalescedForPrefLocs_{dataset.name}")
 
-            dataset_slots.append(ComputingSlot(
+            dataset_slots.append(ComputationSlot(
                 dataset=coalesced_dataset,
                 num_tasks=num_tasks,
                 num_threads_per_executor=num_threads_per_executor
@@ -384,7 +382,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
 
 class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
-    def __init__(self, computations_manager: ComputationalJobManager, tviter: SparkBaseTrainValidIterator):
+    def __init__(self, computations_manager: ComputationsManager, tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
         self._computations_manager = computations_manager
         self._tviter = deecopy_tviter_without_dataset(tviter)

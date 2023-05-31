@@ -15,7 +15,7 @@ from pyspark.ml.util import DefaultParamsWritable, DefaultParamsReadable
 from pyspark.sql import functions as sf
 from pyspark.sql.types import IntegerType
 
-from sparklightautoml.computations.manager import ComputationalJobManager, ComputingSlot, ComputationsSettings, \
+from sparklightautoml.computations.manager import ComputationsManager, ComputationSlot, ComputationsSettings, \
     build_computations_manager
 from sparklightautoml.dataset.base import SparkDataset, PersistenceLevel
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 SparkMLModel = PipelineModel
 
-ComputationalParameters = Union[Dict[str, Any], ComputationalJobManager]
+ComputationalParameters = Union[Dict[str, Any], ComputationsManager]
 
 
 class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
@@ -54,7 +54,7 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         self._prediction_role: Optional[Union[NumericRole, NumericVectorOrArrayRole]] = None
         self._input_roles: Optional[RolesDict] = None
         self._service_columns: Optional[List[str]] = None
-        self._computations_manager: Optional[ComputationalJobManager] \
+        self._computations_manager: Optional[ComputationsManager] \
             = build_computations_manager(computations_settings)
 
     @property
@@ -89,11 +89,11 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
         return self._default_validation_col_name
 
     @property
-    def computations_manager(self) -> ComputationalJobManager:
+    def computations_manager(self) -> ComputationsManager:
         return self._computations_manager
 
     @computations_manager.setter
-    def computations_manager(self, value: ComputationalJobManager):
+    def computations_manager(self, value: ComputationsManager):
         self._computations_manager = value
 
     @log_exception(logger=logger)
@@ -268,7 +268,7 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
             -> Tuple[List[Model], List[SparkDataFrame], List[str]]:
         num_folds = len(train_valid_iterator)
 
-        def _fit_and_val_on_fold(fold_id: int, slot: ComputingSlot) -> Optional[Tuple[int, Model, SparkDataFrame, str]]:
+        def _fit_and_val_on_fold(fold_id: int, slot: ComputationSlot) -> Optional[Tuple[int, Model, SparkDataFrame, str]]:
             mdl_pred_col = f"{self.prediction_feature}_{fold_id}"
             if num_folds > 1:
                 logger.info2(

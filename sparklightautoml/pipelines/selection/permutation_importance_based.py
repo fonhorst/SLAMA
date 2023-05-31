@@ -11,7 +11,7 @@ from pyspark.sql.pandas.functions import pandas_udf
 from pyspark.sql.types import StructField
 
 from sparklightautoml.pipelines.selection.base import SparkImportanceEstimator
-from ...computations.manager import ComputationalJobManager, default_computations_manager, ComputationsStagesSettings, \
+from ...computations.manager import ComputationsManager, default_computations_manager, ComputationsStagesSettings, \
     build_computations_stage_manager, ComputationsSettings, build_computations_manager
 from ...dataset.base import LAMLDataset, SparkDataset
 from ...ml_algo.base import MLAlgo, SparkTabularMLAlgo

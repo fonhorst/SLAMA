@@ -17,7 +17,7 @@ from pyspark.sql import functions as sf, Window
 from pyspark.sql.types import DateType, StringType
 from tqdm import tqdm
 
-from sparklightautoml.automl.base import ReadableIntoSparkDf, AutoMLComputationsSettings
+from sparklightautoml.automl.base import ReadableIntoSparkDf
 from sparklightautoml.automl.blend import SparkWeightedBlender
 from sparklightautoml.automl.presets.base import SparkAutoMLPreset
 from sparklightautoml.automl.presets.utils import (
@@ -26,7 +26,7 @@ from sparklightautoml.automl.presets.utils import (
     replace_month_in_date,
     replace_year_in_date,
 )
-from sparklightautoml.computations.manager import ComputationManagerFactory
+from sparklightautoml.computations.manager import ComputationsManagerFactory, AutoMLComputationsSettings
 from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
@@ -105,8 +105,8 @@ class SparkTabularAutoML(SparkAutoMLPreset):
             config_path = os.path.join(base_dir, self._default_config_path)
 
         self._computation_managers_factory = computation_settings \
-            if isinstance(computation_settings, ComputationManagerFactory) \
-            else ComputationManagerFactory(computation_settings)
+            if isinstance(computation_settings, ComputationsManagerFactory) \
+            else ComputationsManagerFactory(computation_settings)
 
         super().__init__(task, timeout, memory_limit, cpu_limit, gpu_ids,
                          timing_params, config_path, self._computation_managers_factory.get_ml_pipelines_manager())
