@@ -1,6 +1,5 @@
 import logging
 import math
-import threading
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -74,17 +73,15 @@ class SequentialComputationsManager(ComputationsManager):
     def __init__(self):
         super(SequentialComputationsManager, self).__init__()
         self._dataset: Optional[SparkDataset] = None
-        self._session_lock = threading.Lock()
 
     def parallelism(self) -> int:
         return 1
 
     @contextmanager
     def session(self, dataset: Optional[SparkDataset] = None):
-        with self._session_lock:
-            self._dataset = dataset
-            yield
-            self._dataset = None
+        self._dataset = dataset
+        yield
+        self._dataset = None
 
     def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputationSlot], T]) \
             -> List[T]:
@@ -101,6 +98,15 @@ class SequentialComputationsManager(ComputationsManager):
         assert self._dataset is not None, "Cannot allocate slots without session"
         yield ComputationSlot("0", self._dataset)
 
+    def __deepcopy__(self, memodict={}):
+        assert self._dataset is None, "Cannot deepcopying during session"
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memodict[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memodict))
+        return result
+
 
 class ParallelComputationsManager(ComputationsManager):
     def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = False):
@@ -108,8 +114,7 @@ class ParallelComputationsManager(ComputationsManager):
         self._parallelism = parallelism
         self._use_location_prefs_mode = use_location_prefs_mode
         self._available_computing_slots_queue: Optional[Queue] = None
-        self._pool = ThreadPool(processes=parallelism)
-        self._session_lock = threading.Lock()
+        self._pool: Optional[ThreadPool] = None
 
     @property
     def parallelism(self) -> int:
@@ -117,13 +122,12 @@ class ParallelComputationsManager(ComputationsManager):
 
     @contextmanager
     def session(self, dataset: Optional[SparkDataset] = None):
-        with self._session_lock:
-            with self._make_computing_slots(dataset) as computing_slots:
-                self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
-                for cslot in computing_slots:
-                    self._available_computing_slots_queue.put(cslot)
-                yield
-                self._available_computing_slots_queue = None
+        with self._obtain_thread_pool(), self._make_computing_slots(dataset) as computing_slots:
+            self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
+            for cslot in computing_slots:
+                self._available_computing_slots_queue.put(cslot)
+            yield
+            self._available_computing_slots_queue = None
 
     def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputationSlot], T])\
             -> List[T]:
@@ -174,6 +178,15 @@ class ParallelComputationsManager(ComputationsManager):
         else:
             yield [ComputationSlot(f"i", dataset) for i in range(self._parallelism)]
 
+    @contextmanager
+    def _obtain_thread_pool(self):
+        try:
+            self._pool = ThreadPool(processes=self._parallelism)
+            yield
+        finally:
+            self._pool.terminate()
+            self._pool = None
+
     def _coalesced_dataset_copies_into_preffered_locations(self, dataset: SparkDataset) \
             -> List[ComputationSlot]:
         logger.warning("Be aware for correct functioning slot-based computations "
@@ -222,7 +235,18 @@ class ParallelComputationsManager(ComputationsManager):
         return dataset_slots
 
     def _map_and_compute(self, func: Callable[[], T], tasks: List[Any]) -> List[T]:
+        assert self._pool is not None
         return self._pool.map(inheritable_thread_target_with_exceptions_catcher(func), tasks)
 
     def _compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        assert self._pool is not None
         return self._pool.map(inheritable_thread_target_with_exceptions_catcher(lambda f: f()), tasks)
+
+    def __deepcopy__(self, memodict={}):
+        assert self._pool is None, "Cannot deepcopying during session"
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memodict[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memodict))
+        return result

@@ -524,7 +524,7 @@ class SparkAutoML(TransformerInputOutputRoles):
             for k, ml_pipe in enumerate(level)
         ]
 
-        results = self._computations_manager.compute_on_dataset(fit_tasks)
+        results = self._computations_manager.compute(fit_tasks)
 
         ml_pipes = [ml_pipe for ml_pipe, _ in results]
         ml_pipes_preds = [pipe_preds for _, pipe_preds in results]
