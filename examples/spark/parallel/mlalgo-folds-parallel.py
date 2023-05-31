@@ -7,7 +7,8 @@ import os
 from lightautoml.ml_algo.tuning.base import DefaultTuner
 from lightautoml.ml_algo.utils import tune_and_fit_predict
 from pyspark.sql import functions as sf
-from sparklightautoml.computations.manager import ParallelComputationsManagerComputational
+
+from sparklightautoml.computations.manager import ParallelComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     # available ml_algo: linear_l2, lgb
     # feat_pipe, ml_algo_name = "linear", "linear_l2"
     feat_pipe, ml_algo_name = "lgb_adv", "lgb"
-    job_parallelism = 1
+    parallelism = 1
     dataset_name = os.environ.get("DATASET", "lama_test_dataset")
 
     # load and prepare data
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     train_ds, test_ds = train_ds.persist(), test_ds.persist()
 
     # create main entities
-    computations_manager = ParallelComputationsManagerComputational(job_pool_size=job_parallelism)
+    computations_manager = ParallelComputationsManager(parallelism=parallelism)
     iterator = SparkFoldsIterator(train_ds)#.convert_to_holdout_iterator()
     if ml_algo_name == "lgb":
         ml_algo = SparkBoostLGBM(experimental_parallel_mode=True, computations_settings=computations_manager)

@@ -1,7 +1,7 @@
 import logging.config
 
 from examples.spark.examples_utils import get_spark_session, get_dataset
-from sparklightautoml.computations.manager import ParallelComputationsManagerComputational
+from sparklightautoml.computations.manager import ParallelComputationsManager
 from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
 from sparklightautoml.pipelines.features.lgb_pipeline import SparkLGBAdvancedPipeline, SparkLGBSimpleFeatures
 from sparklightautoml.pipelines.features.linear_pipeline import SparkLinearFeatures
@@ -27,12 +27,12 @@ if __name__ == "__main__":
     # settings and data
     cv = 5
     dataset_name = "lama_test_dataset"
-    job_parallelism = 2
+    parallelism = 2
 
     dataset = get_dataset(dataset_name)
     df = spark.read.csv(dataset.path, header=True)
 
-    computations_manager = ParallelComputationsManagerComputational(job_pool_size=job_parallelism)
+    computations_manager = ParallelComputationsManager(parallelism=parallelism)
     task = SparkTask(name=dataset.task_type)
     reader = SparkToSparkReader(task=task, cv=cv, advanced_roles=False)
 

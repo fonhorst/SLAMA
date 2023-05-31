@@ -5,16 +5,14 @@ from typing import Optional, cast, Iterator
 
 import numpy as np
 import pandas as pd
-from lightautoml.validation.base import TrainValidIterator
 from pandas import Series
 from pyspark.sql.pandas.functions import pandas_udf
 from pyspark.sql.types import StructField
 
 from sparklightautoml.pipelines.selection.base import SparkImportanceEstimator
-from ...computations.manager import ComputationsManager, default_computations_manager, ComputationsStagesSettings, \
-    build_computations_stage_manager, ComputationsSettings, build_computations_manager
-from ...dataset.base import LAMLDataset, SparkDataset
-from ...ml_algo.base import MLAlgo, SparkTabularMLAlgo
+from ...computations.manager import ComputationsSettings, build_computations_manager
+from ...dataset.base import SparkDataset
+from ...ml_algo.base import SparkTabularMLAlgo
 from ...validation.base import SparkBaseTrainValidIterator
 
 logger = logging.getLogger(__name__)
@@ -94,8 +92,9 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
                 return feat, (normal_score - shuffled_score)
             return func
 
-        results = self._computations_manager.compute_on_dataset([build_score_func(it, feat)
-                                                                 for it, feat in enumerate(valid_data.features)])
+        results = self._computations_manager.compute([
+            build_score_func(it, feat) for it, feat in enumerate(valid_data.features)
+        ])
 
         permutation_importance = {feat: diff_score for feat, diff_score in results}
 

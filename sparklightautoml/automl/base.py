@@ -18,9 +18,7 @@ from pyspark.ml import PipelineModel, Transformer
 from pyspark.sql.session import SparkSession
 
 from .blend import SparkBlender, SparkBestModelSelector
-from ..computations.manager import WorkloadType, build_named_parallelism_settings, \
-    build_computations_manager, ComputationsManager, AutoMLStageManager, ComputationsStagesSettings, \
-    build_computations_stage_manager, ComputationsSettings
+from ..computations.manager import build_computations_manager, ComputationsManager, ComputationsSettings
 from ..dataset.base import SparkDataset, PersistenceLevel, PersistenceManager
 from ..dataset.persistence import PlainCachePersistenceManager
 from ..pipelines.base import TransformerInputOutputRoles
@@ -30,9 +28,6 @@ from ..reader.base import SparkToSparkReader
 from ..utils import ColumnsSelectorTransformer, SparkDataFrame
 from ..validation.base import SparkBaseTrainValidIterator, mark_as_train, mark_as_val
 from ..validation.iterators import SparkFoldsIterator, SparkHoldoutIterator, SparkDummyIterator
-from lightautoml.reader.base import RolesDict
-from lightautoml.utils.logging import set_stdout_level, verbosity_to_loglevel
-from lightautoml.utils.timer import PipelineTimer
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +119,6 @@ class SparkAutoML(TransformerInputOutputRoles):
         if reader and levels:
             self._initialize(reader, levels, timer, blender, skip_conn, return_all_predictions)
 
-        # TODO: PARALLEL - move to a separate function
-        self._parallelism_settings = self._parse_parallelism_mode(computation_settings)
         self._computations_manager: Optional[ComputationsManager] =  \
             build_computations_manager(computation_settings)
 
@@ -544,14 +537,6 @@ class SparkAutoML(TransformerInputOutputRoles):
             flg_last_level = False
 
         return ml_pipes, ml_pipes_preds, flg_last_level
-
-    @staticmethod
-    def _parse_parallelism_mode(parallelism_mode: AutoMLComputationsSettings):
-        if isinstance(parallelism_mode, Tuple):
-            mode, parallelism = parallelism_mode
-            return build_named_parallelism_settings(mode, parallelism)
-
-        return parallelism_mode
 
 
 def _do_fit(ml_pipe: SparkMLPipeline, iterator: SparkBaseTrainValidIterator) \

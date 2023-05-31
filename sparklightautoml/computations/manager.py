@@ -197,6 +197,11 @@ class ComputationSlot:
 
 
 class ComputationsManager(ABC):
+    @property
+    @abstractmethod
+    def parallelism(self) -> int:
+        ...
+
     @contextmanager
     @abstractmethod
     def session(self, dataset: Optional[SparkDataset] = None):
@@ -232,6 +237,9 @@ class SequentialComputationsManager(ComputationsManager):
         self._dataset: Optional[SparkDataset] = None
         self._session_lock = threading.Lock()
 
+    def parallelism(self) -> int:
+        return 1
+
     @contextmanager
     def session(self, dataset: Optional[SparkDataset] = None):
         with self._session_lock:
@@ -256,7 +264,7 @@ class SequentialComputationsManager(ComputationsManager):
 
 
 class ParallelComputationsManager(ComputationsManager):
-    def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = True):
+    def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = False):
         # TODO: PARALLEL - accept a thread pool coming from above
         # doing it, because ParallelComputations Manager should be deepcopy-able
         # create_pools(1, 1, parallelism)
@@ -266,6 +274,10 @@ class ParallelComputationsManager(ComputationsManager):
         self._available_computing_slots_queue: Optional[Queue] = None
         self._pool = ThreadPool(processes=parallelism)
         self._session_lock = threading.Lock()
+
+    @property
+    def parallelism(self) -> int:
+        return self._parallelism
 
     @contextmanager
     def session(self, dataset: Optional[SparkDataset] = None):

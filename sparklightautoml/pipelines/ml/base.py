@@ -14,8 +14,7 @@ from pyspark.ml import Transformer, PipelineModel
 from ..base import TransformerInputOutputRoles
 from ..features.base import SparkFeaturesPipeline, SparkEmptyFeaturePipeline
 from ..selection.base import SparkSelectionPipelineWrapper
-from ...computations.manager import WorkloadType, ComputationsStagesSettings, build_computations_stage_manager, \
-    ComputationsManager, build_computations_manager, ComputationsSettings
+from ...computations.manager import build_computations_manager, ComputationsSettings
 from ...dataset.base import SparkDataset
 from ...ml_algo.base import SparkTabularMLAlgo
 from ...validation.base import SparkBaseTrainValidIterator
@@ -125,8 +124,10 @@ class SparkMLPipeline(LAMAMLPipeline, TransformerInputOutputRoles):
 
             def build_fit_func(ml_algo: SparkTabularMLAlgo, param_tuner: ParamsTuner, force_calc: bool):
                 def func():
-                    fitted_ml_algo, curr_preds = tune_and_fit_predict(ml_algo, param_tuner, frozen_train_valid, force_calc)
-                    fitted_ml_algo, curr_preds = cast(SparkTabularMLAlgo, fitted_ml_algo), cast(SparkDataset, curr_preds)
+                    fitted_ml_algo, curr_preds = tune_and_fit_predict(ml_algo, param_tuner,
+                                                                      frozen_train_valid, force_calc)
+                    fitted_ml_algo = cast(SparkTabularMLAlgo, fitted_ml_algo)
+                    curr_preds = cast(SparkDataset, curr_preds)
 
                     if ml_algo is None:
                         warnings.warn(
@@ -142,7 +143,7 @@ class SparkMLPipeline(LAMAMLPipeline, TransformerInputOutputRoles):
                 for ml_algo, param_tuner, force_calc in zip(self._ml_algos, self.params_tuners, self.force_calc)
             ]
 
-            results = self._computations_manager.compute_on_dataset(fit_tasks)
+            results = self._computations_manager.compute(fit_tasks)
 
             self.ml_algos.extend([ml_algo for ml_algo, _ in results])
             preds = [pred for _, pred in results]
@@ -186,5 +187,3 @@ class SparkMLPipeline(LAMAMLPipeline, TransformerInputOutputRoles):
 
     def _get_service_columns(self) -> List[str]:
         return self._service_columns
-
-
