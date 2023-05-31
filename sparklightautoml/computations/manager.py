@@ -187,7 +187,8 @@ class ComputationalJobManager(ABC):
         ...
 
     @abstractmethod
-    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[ComputingSlot], T]) -> List[T]:
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T])\
+            -> List[T]:
         ...
 
     @abstractmethod
@@ -242,7 +243,8 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             yield
             self._available_computing_slots_queue = None
 
-    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[ComputingSlot], T]) -> List[T]:
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T])\
+            -> List[T]:
         old_train = train_val_iter.train
         train_val_iter.train = None
         tv_iter = deepcopy(train_val_iter)
@@ -255,7 +257,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
                     local_tv_iter.train = slot.dataset
                     slot = deepcopy(slot)
                     slot.dataset = local_tv_iter[fold_id]
-                    return task(slot)
+                    return task(fold_id, slot)
 
             fold_ids = list(range(len(train_val_iter)))
             return self._map(_task_wrap, fold_ids)
@@ -336,7 +338,6 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
     def _map(self, func: Callable[[], T], tasks: List[Any]) -> List[T]:
         return self._pool.map(inheritable_thread_target_with_exceptions_catcher(func), tasks)
-
 
 
 class SequentialAutoMLStageManager(AutoMLStageManager):

@@ -268,34 +268,28 @@ class SparkTabularMLAlgo(MLAlgo, TransformerInputOutputRoles, ABC):
             -> Tuple[List[Model], List[SparkDataFrame], List[str]]:
         num_folds = len(train_valid_iterator)
 
-        def build_fit_func(i: int, mdl_pred_col: str):
-            def func(slot: ComputingSlot) -> Optional[Tuple[int, Model, SparkDataFrame, str]]:
-                if num_folds > 1:
-                    logger.info2(
-                        "===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m "
-                        "=====".format(i, self._name)
-                    )
+        def _fit_and_val_on_fold(fold_id: int, slot: ComputingSlot) -> Optional[Tuple[int, Model, SparkDataFrame, str]]:
+            mdl_pred_col = f"{self.prediction_feature}_{fold_id}"
+            if num_folds > 1:
+                logger.info2(
+                    "===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m "
+                    "=====".format(fold_id, self._name)
+                )
 
-                if self.timer.time_limit_exceeded():
-                    logger.info(f"No time to calculate fold {i}/{num_folds} (Time limit is already exceeded)")
-                    return None
+            if self.timer.time_limit_exceeded():
+                logger.info(f"No time to calculate fold {fold_id}/{num_folds} (Time limit is already exceeded)")
+                return None
 
-                runtime_settings = {"num_tasks": slot.num_tasks, "num_threads": slot.num_threads_per_executor}
-                train_ds = slot.dataset
+            runtime_settings = {"num_tasks": slot.num_tasks, "num_threads": slot.num_threads_per_executor}
+            train_ds = slot.dataset
 
-                mdl, vpred, _ \
-                    = self.fit_predict_single_fold(mdl_pred_col, self.validation_column, train_ds, runtime_settings)
-                vpred = vpred.select(SparkDataset.ID_COLUMN, train_ds.target_column, mdl_pred_col)
+            mdl, vpred, _ \
+                = self.fit_predict_single_fold(mdl_pred_col, self.validation_column, train_ds, runtime_settings)
+            vpred = vpred.select(SparkDataset.ID_COLUMN, train_ds.target_column, mdl_pred_col)
 
-                return i, mdl, vpred, mdl_pred_col
-            return func
+            return fold_id, mdl, vpred, mdl_pred_col
 
-        fit_tasks = [
-            build_fit_func(i, f"{self.prediction_feature}_{i}")
-            for i, _ in enumerate(train_valid_iterator)
-        ]
-
-        results = self.computations_manager.compute(train_valid_iterator.train, fit_tasks)
+        results = self.computations_manager.compute_folds(train_valid_iterator, _fit_and_val_on_fold)
 
         # TODO: PARALLEL - is it a correct place for running? incorrect functioning in the sequential case
         self.timer.write_run_info()
