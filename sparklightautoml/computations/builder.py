@@ -8,7 +8,7 @@ AutoMLComputationsSettings = Union[Tuple[str, int], Dict[str, Any], 'Computation
 
 
 class ComputationsManagerFactory:
-    def __init__(self, computations_settings: Optional[Tuple[str, int], Dict[str, Any]] = None):
+    def __init__(self, computations_settings: Optional[Union[Tuple[str, int], Dict[str, Any]]] = None):
         super(ComputationsManagerFactory, self).__init__()
         computations_settings = computations_settings or ("no_parallelism", -1)
 

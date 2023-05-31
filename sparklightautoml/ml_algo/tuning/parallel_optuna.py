@@ -1,14 +1,15 @@
 import logging
 from copy import deepcopy
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple, Callable, Iterable
 
 import optuna
 from lightautoml.ml_algo.tuning.optuna import OptunaTuner
 from lightautoml.validation.base import HoldoutIterator
 
 from sparklightautoml.computations.builder import build_computations_manager
-from sparklightautoml.computations.managers import SequentialComputationsManager, ComputationsSettings
-from sparklightautoml.computations.utils import _SlotInitiatedTVIter
+from sparklightautoml.computations.managers import SequentialComputationsManager, ComputationsSettings, \
+    ComputationsManager
+from sparklightautoml.computations.utils import deecopy_tviter_without_dataset
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
@@ -127,3 +128,45 @@ class ParallelOptunaTuner(OptunaTuner):
                 timeout=self.timeout,
                 callbacks=[update_trial_time]
             )
+
+
+class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
+    def __init__(self, computations_manager: ComputationsManager, tviter: SparkBaseTrainValidIterator):
+        super().__init__(None)
+        self._computations_manager = computations_manager
+        self._tviter = deecopy_tviter_without_dataset(tviter)
+
+    def __iter__(self) -> Iterable:
+        def _iter():
+            with self._computations_manager.allocate() as slot:
+                self._tviter.train = slot.dataset
+                for elt in self._tviter:
+                    yield elt
+                self._tviter = None
+
+        return _iter()
+
+    def __len__(self) -> Optional[int]:
+        return len(self._tviter)
+
+    def __getitem__(self, fold_id: int) -> SparkDataset:
+        with self._computations_manager.allocate() as slot:
+            self._tviter.train = slot.dataset
+            dataset = self._tviter[fold_id]
+            self._tviter = None
+        return dataset
+
+    def __next__(self):
+        raise NotImplementedError("NotSupportedMethod")
+
+    def freeze(self) -> 'SparkBaseTrainValidIterator':
+        raise NotImplementedError("NotSupportedMethod")
+
+    def unpersist(self, skip_val: bool = False):
+        raise NotImplementedError("NotSupportedMethod")
+
+    def get_validation_data(self) -> SparkDataset:
+        return self._tviter.get_validation_data()
+
+    def convert_to_holdout_iterator(self):
+        return _SlotInitiatedTVIter(self._computations_manager, self._tviter.convert_to_holdout_iterator())

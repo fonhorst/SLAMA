@@ -215,7 +215,11 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
             if "lambdaL2" in params:
                 del params["lambdaL2"]
 
-        params = {**params, **runtime_settings}
+        runtime_settings = runtime_settings or dict()
+        if 'num_tasks' in runtime_settings:
+            params["numTasks"] = runtime_settings['num_tasks']
+        if 'num_threads' in runtime_settings:
+            params["numThreads"] = runtime_settings['num_threads']
 
         return params, verbose_eval
 
@@ -491,7 +495,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
 
     def _ensure_validation_size(self, full_data: SparkDataFrame, validation_column: str) -> SparkDataFrame:
         # reduce validation size if it is too big
-        val_data_size = full_data.where(sf.col(validation_column)).count()
+        val_data_size = full_data.where(sf.col(validation_column).astype('int') == 1).count()
         if val_data_size > self._max_validation_size:
             logger.warning(f"Too big validation fold: {val_data_size}. "
                            f"Reducing its size down according to max_validation_size setting:"
