@@ -4,7 +4,7 @@ import multiprocessing
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from copy import deepcopy, copy
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from multiprocessing.pool import ThreadPool
@@ -71,6 +71,14 @@ def inheritable_thread_target_with_exceptions_catcher(f):
             raise
 
     return inheritable_thread_target(_func)
+
+
+def deecopy_tviter_without_dataset(tv_iter: SparkBaseTrainValidIterator) -> SparkBaseTrainValidIterator:
+    train = tv_iter.train
+    tv_iter.train = None
+    tv_iter_copy = deepcopy(tv_iter)
+    tv_iter.train = train
+    return tv_iter_copy
 
 
 def build_named_parallelism_settings(config_name: str, parallelism: int):
@@ -245,10 +253,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
     def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T])\
             -> List[T]:
-        old_train = train_val_iter.train
-        train_val_iter.train = None
-        tv_iter = deepcopy(train_val_iter)
-        train_val_iter.train = old_train
+        tv_iter = deecopy_tviter_without_dataset(train_val_iter)
 
         with self.session(train_val_iter.train):
             def _task_wrap(fold_id: int):
@@ -387,11 +392,7 @@ class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
     def __init__(self, computations_manager: ComputationalJobManager, tviter: SparkBaseTrainValidIterator):
         super().__init__(None)
         self._computations_manager = computations_manager
-        # TODO: PARALLEL - replace it with 'with'-expression
-        old_train = tviter.train
-        tviter.train = None
-        self._tviter = deepcopy(tviter)
-        tviter.train = old_train
+        self._tviter = deecopy_tviter_without_dataset(tviter)
 
     def __iter__(self) -> Iterable:
         def _iter():
