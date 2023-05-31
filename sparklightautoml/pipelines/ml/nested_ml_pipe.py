@@ -6,7 +6,7 @@ from lightautoml.pipelines.ml.nested_ml_pipe import (
     NestedTabularMLAlgo,
 )
 
-from sparklightautoml.computations.manager import ComputationsStagesSettings
+from sparklightautoml.computations.manager import ComputationsSettings
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
 from sparklightautoml.pipelines.ml.base import SparkMLPipeline
@@ -29,7 +29,7 @@ class SparkNestedTabularMLPipeline(SparkMLPipeline, LAMANestedTabularMLPipeline)
         n_folds: Optional[int] = None,
         inner_tune: bool = False,
         refit_tuner: bool = False,
-        computations_settings: Optional[ComputationsStagesSettings] = None
+        computations_settings: Optional[ComputationsSettings] = None
     ):
         if cv > 1:
             new_ml_algos = []

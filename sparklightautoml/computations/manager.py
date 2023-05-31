@@ -1,6 +1,7 @@
 import logging
 import math
 import multiprocessing
+import threading
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -123,6 +124,21 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
     return parallelism_config[config_name]
 
 
+def build_computations_manager(computations_settings: Optional[ComputationsSettings] = None) \
+        -> 'ComputationalJobManager':
+    if computations_settings is not None and isinstance(computations_settings, ComputationalJobManager):
+        computations_manager = computations_settings
+    elif computations_settings is not None:
+        assert isinstance(computations_settings, dict)
+        parallelism = int(computations_settings.get('parallelism', '1'))
+        use_location_prefs_mode = computations_settings.get('use_location_prefs_mode', False)
+        computations_manager = ParallelComputationalJobManager(parallelism, use_location_prefs_mode)
+    else:
+        computations_manager = SequentialComputationalJobManager()
+
+    return computations_manager
+
+
 class ComputationManagerFactory:
     def __init__(self, computations_settings: Optional[Tuple[str, int], Dict[str, Any]] = None):
         super(ComputationManagerFactory, self).__init__()
@@ -141,14 +157,14 @@ class ComputationManagerFactory:
         self._linear_l2_params = self._computations_settings.get('linear_l2', None)
         self._lgb_params = self._computations_settings.get('lgb', None)
 
-    def get_ml_pipelines_manager(self) -> 'AutoMLStageManager':
-        return build_computations_stage_manager(self._ml_pipelines_parallelism)
+    def get_ml_pipelines_manager(self) -> 'ComputationalJobManager':
+        return build_computations_manager({"parallelism": self._ml_pipelines_parallelism})
 
-    def get_ml_algo_manager(self) -> 'AutoMLStageManager':
-        return build_computations_stage_manager(self._ml_algos_parallelism)
+    def get_ml_algo_manager(self) -> 'ComputationalJobManager':
+        return build_computations_manager({"parallelism": self._ml_algos_parallelism})
 
-    def get_selector_manager(self) -> 'AutoMLStageManager':
-        return build_computations_stage_manager(self._selector_parallelism)
+    def get_selector_manager(self) -> 'ComputationalJobManager':
+        return build_computations_manager({"parallelism": self._selector_parallelism})
 
     def get_tuning_manager(self) -> 'ComputationalJobManager':
         return build_computations_manager({"parallelism": self._tuner_parallelism})
@@ -177,21 +193,15 @@ class PrefferedLocsPartitionCoalescerTransformer(JavaTransformer):
 
 @dataclass
 class ComputingSlot:
-    dataset: SparkDataset
+    dataset: Optional[SparkDataset] = None
     num_tasks: Optional[int] = None
     num_threads_per_executor: Optional[int] = None
-
-
-class AutoMLStageManager(ABC):
-    @abstractmethod
-    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
-        ...
 
 
 class ComputationalJobManager(ABC):
     @contextmanager
     @abstractmethod
-    def session(self, dataset: SparkDataset):
+    def session(self, dataset: Optional[SparkDataset] = None):
         ...
 
     @abstractmethod
@@ -200,7 +210,12 @@ class ComputationalJobManager(ABC):
         ...
 
     @abstractmethod
-    def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) \
+            -> List[T]:
+        ...
+
+    @abstractmethod
+    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
         ...
 
     @abstractmethod
@@ -217,19 +232,29 @@ class SequentialComputationalJobManager(ComputationalJobManager):
     def __init__(self):
         super(SequentialComputationalJobManager, self).__init__()
         self._dataset: Optional[SparkDataset] = None
+        self._session_lock = threading.Lock()
 
     @contextmanager
-    def session(self, dataset: SparkDataset):
-        self._dataset = dataset
-        yield
-        self._dataset = None
+    def session(self, dataset: Optional[SparkDataset] = None):
+        with self._session_lock:
+            self._dataset = dataset
+            yield
+            self._dataset = None
 
-    def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+    def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T]) \
+            -> List[T]:
+        return [task(i, ComputingSlot(train)) for i, train in enumerate(train_val_iter)]
+
+    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        return [task() for task in tasks]
+
+    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         return [task(ComputingSlot(dataset)) for task in tasks]
 
+    @contextmanager
     def allocate(self) -> ComputingSlot:
         assert self._dataset is not None, "Cannot allocate slots without session"
-        return ComputingSlot(self._dataset)
+        yield ComputingSlot(self._dataset)
 
 
 class ParallelComputationalJobManager(ComputationalJobManager):
@@ -242,17 +267,19 @@ class ParallelComputationalJobManager(ComputationalJobManager):
         self._use_location_prefs_mode = use_location_prefs_mode
         self._available_computing_slots_queue: Optional[Queue] = None
         self._pool = ThreadPool(processes=parallelism)
+        self._session_lock = threading.Lock()
 
     @contextmanager
-    def session(self, dataset: SparkDataset):
+    def session(self, dataset: Optional[SparkDataset] = None):
         # TODO: PARALLEL - make this method thread safe by thread locking
         # TODO: PARALLEL - add id to slots
-        with self._make_computing_slots(dataset) as computing_slots:
-            self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
-            for cslot in computing_slots:
-                self._available_computing_slots_queue.put(cslot)
-            yield
-            self._available_computing_slots_queue = None
+        with self._session_lock:
+            with self._make_computing_slots(dataset) as computing_slots:
+                self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
+                for cslot in computing_slots:
+                    self._available_computing_slots_queue.put(cslot)
+                yield
+                self._available_computing_slots_queue = None
 
     def compute_folds(self, train_val_iter: SparkBaseTrainValidIterator, task: Callable[[int, ComputingSlot], T])\
             -> List[T]:
@@ -268,15 +295,19 @@ class ParallelComputationalJobManager(ComputationalJobManager):
                     return task(fold_id, slot)
 
             fold_ids = list(range(len(train_val_iter)))
-            return self._map(_task_wrap, fold_ids)
+            return self._map_and_compute(_task_wrap, fold_ids)
 
-    # TODO: PARALLEL - make a method for compute without a dataset (Optional dataset)
-    def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
+    def compute_on_dataset(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         with self.session(dataset):
             def _task_wrap(task):
                 with self.allocate() as slot:
                     return task(slot)
-            return self._map(_task_wrap, tasks)
+            return self._map_and_compute(_task_wrap, tasks)
+
+    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        # use session here for synchronization purpose
+        with self.session():
+            return self._compute(tasks)
 
     @contextmanager
     def allocate(self) -> ComputingSlot:
@@ -286,8 +317,8 @@ class ParallelComputationalJobManager(ComputationalJobManager):
         self._available_computing_slots_queue.put(slot)
 
     @contextmanager
-    def _make_computing_slots(self, dataset) -> List[ComputingSlot]:
-        if self._use_location_prefs_mode:
+    def _make_computing_slots(self, dataset: Optional[SparkDataset]) -> List[ComputingSlot]:
+        if dataset is not None and self._use_location_prefs_mode:
             computing_slots = None
             try:
                 computing_slots = self._coalesced_dataset_copies_into_preffered_locations(dataset)
@@ -345,51 +376,11 @@ class ParallelComputationalJobManager(ComputationalJobManager):
 
         return dataset_slots
 
-    def _map(self, func: Callable[[], T], tasks: List[Any]) -> List[T]:
+    def _map_and_compute(self, func: Callable[[], T], tasks: List[Any]) -> List[T]:
         return self._pool.map(inheritable_thread_target_with_exceptions_catcher(func), tasks)
 
-
-class SequentialAutoMLStageManager(AutoMLStageManager):
-    def __init__(self):
-        super(SequentialAutoMLStageManager, self).__init__()
-
-    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
-        return [task() for task in tasks]
-
-
-class ParallelAutoMLStageManager(AutoMLStageManager):
-    def __init__(self, parallelism: int = 1):
-        super(ParallelAutoMLStageManager, self).__init__()
-        self._pool = ThreadPool(processes=parallelism)
-
-    def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
-        return self._pool.map(lambda task: task(), tasks)
-
-
-def build_computations_manager(computations_settings: Optional[ComputationsSettings] = None) -> ComputationalJobManager:
-    if computations_settings is not None and isinstance(computations_settings, ComputationalJobManager):
-        computations_manager = computations_settings
-    elif computations_settings is not None:
-        assert isinstance(computations_settings, dict)
-        parallelism = int(computations_settings.get('parallelism', '1'))
-        use_location_prefs_mode = computations_settings.get('use_location_prefs_mode', False)
-        computations_manager = ParallelComputationalJobManager(parallelism, use_location_prefs_mode)
-    else:
-        computations_manager = SequentialComputationalJobManager()
-
-    return computations_manager
-
-
-def build_computations_stage_manager(computations_stage_settings: Optional[ComputationsStagesSettings] = None) -> AutoMLStageManager:
-    if computations_stage_settings is not None and isinstance(computations_stage_settings, AutoMLStageManager):
-        computations_manager = computations_stage_settings
-    elif computations_stage_settings is not None:
-        assert isinstance(computations_stage_settings, int) and computations_stage_settings >= 1
-        computations_manager = ParallelAutoMLStageManager(parallelism=computations_stage_settings)
-    else:
-        computations_manager = SequentialAutoMLStageManager()
-
-    return computations_manager
+    def _compute(self, tasks: List[Callable[[], T]]) -> List[T]:
+        return self._pool.map(inheritable_thread_target_with_exceptions_catcher(lambda f: f()), tasks)
 
 
 class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):

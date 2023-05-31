@@ -1,17 +1,17 @@
 import logging
 import os
 import shutil
-from typing import Optional, Any, Sequence, Iterable, Union
+from typing import Optional, Any, Sequence, Iterable
 
 import torch
 import yaml
 from lightautoml.utils.logging import verbosity_to_loglevel, set_stdout_level, add_filehandler
 from lightautoml.utils.timer import PipelineTimer
 
-from sparklightautoml.automl.base import SparkAutoML, AutoMLComputationsSettings
+from sparklightautoml.automl.base import SparkAutoML
+from sparklightautoml.computations.manager import ComputationsSettings
 from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
 from sparklightautoml.tasks.base import SparkTask
-from sparklightautoml.utils import SparkDataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class SparkAutoMLPreset(SparkAutoML):
         gpu_ids: Optional[str] = "all",
         timing_params: Optional[dict] = None,
         config_path: Optional[str] = None,
-        computation_settings: Optional[AutoMLComputationsSettings] = ("no_parallelism", -1),
+        computation_settings: Optional[ComputationsSettings] = ("no_parallelism", -1),
         **kwargs: Any,
     ):
         """

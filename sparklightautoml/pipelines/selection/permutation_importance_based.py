@@ -12,7 +12,7 @@ from pyspark.sql.types import StructField
 
 from sparklightautoml.pipelines.selection.base import SparkImportanceEstimator
 from ...computations.manager import ComputationalJobManager, default_computations_manager, ComputationsStagesSettings, \
-    build_computations_stage_manager
+    build_computations_stage_manager, ComputationsSettings, build_computations_manager
 from ...dataset.base import LAMLDataset, SparkDataset
 from ...ml_algo.base import MLAlgo, SparkTabularMLAlgo
 from ...validation.base import SparkBaseTrainValidIterator
@@ -28,7 +28,7 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
 
     """
 
-    def __init__(self, random_state: int = 42, computations_settings: Optional[ComputationsStagesSettings] = None):
+    def __init__(self, random_state: int = 42, computations_settings: Optional[ComputationsSettings] = None):
         """
         Args:
             random_state: seed for random generation of features permutation.
@@ -36,7 +36,7 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
         """
         super().__init__()
         self.random_state = random_state
-        self._computations_manager = build_computations_stage_manager(computations_settings)
+        self._computations_manager = build_computations_manager(computations_settings)
 
     def fit(
         self,
@@ -94,8 +94,8 @@ class SparkNpPermutationImportanceEstimator(SparkImportanceEstimator):
                 return feat, (normal_score - shuffled_score)
             return func
 
-        results = self._computations_manager.compute([build_score_func(it, feat)
-                                                      for it, feat in enumerate(valid_data.features)])
+        results = self._computations_manager.compute_on_dataset([build_score_func(it, feat)
+                                                                 for it, feat in enumerate(valid_data.features)])
 
         permutation_importance = {feat: diff_score for feat, diff_score in results}
 

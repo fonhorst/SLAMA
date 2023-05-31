@@ -20,7 +20,7 @@ from pyspark.sql.session import SparkSession
 from .blend import SparkBlender, SparkBestModelSelector
 from ..computations.manager import WorkloadType, build_named_parallelism_settings, \
     build_computations_manager, ComputationalJobManager, AutoMLStageManager, ComputationsStagesSettings, \
-    build_computations_stage_manager
+    build_computations_stage_manager, ComputationsSettings
 from ..dataset.base import SparkDataset, PersistenceLevel, PersistenceManager
 from ..dataset.persistence import PlainCachePersistenceManager
 from ..pipelines.base import TransformerInputOutputRoles
@@ -87,7 +87,7 @@ class SparkAutoML(TransformerInputOutputRoles):
         blender: Optional[SparkBlender] = None,
         skip_conn: bool = False,
         return_all_predictions: bool = False,
-        computation_settings: Optional[ComputationsStagesSettings] = ("no_parallelism", -1)
+        computation_settings: Optional[ComputationsSettings] = ("no_parallelism", -1)
     ):
         """
 
@@ -126,8 +126,8 @@ class SparkAutoML(TransformerInputOutputRoles):
 
         # TODO: PARALLEL - move to a separate function
         self._parallelism_settings = self._parse_parallelism_mode(computation_settings)
-        self._computations_manager: Optional[AutoMLStageManager] =  \
-            build_computations_stage_manager(computation_settings)
+        self._computations_manager: Optional[ComputationalJobManager] =  \
+            build_computations_manager(computation_settings)
 
     @property
     def input_roles(self) -> Optional[RolesDict]:
@@ -530,7 +530,7 @@ class SparkAutoML(TransformerInputOutputRoles):
             for k, ml_pipe in enumerate(level)
         ]
 
-        results = self._computations_manager.compute(fit_tasks)
+        results = self._computations_manager.compute_on_dataset(fit_tasks)
 
         ml_pipes = [ml_pipe for ml_pipe, _ in results]
         ml_pipes_preds = [pipe_preds for _, pipe_preds in results]
