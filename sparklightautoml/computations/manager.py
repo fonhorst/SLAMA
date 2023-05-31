@@ -234,6 +234,7 @@ class SequentialComputationalJobManager(ComputationalJobManager):
 
 class ParallelComputationalJobManager(ComputationalJobManager):
     def __init__(self, parallelism: int = 1, use_location_prefs_mode: bool = True):
+        # TODO: PARALLEL - accept a thread pool coming from above
         # doing it, because ParallelComputations Manager should be deepcopy-able
         # create_pools(1, 1, parallelism)
         assert parallelism >= 1
@@ -242,7 +243,9 @@ class ParallelComputationalJobManager(ComputationalJobManager):
         self._available_computing_slots_queue: Optional[Queue] = None
         self._pool = ThreadPool(processes=parallelism)
 
+    @contextmanager
     def session(self, dataset: SparkDataset):
+        # TODO: PARALLEL - make this method thread safe by thread locking
         # TODO: PARALLEL - add id to slots
         with self._make_computing_slots(dataset) as computing_slots:
             self._available_computing_slots_queue = Queue(maxsize=len(computing_slots))
@@ -267,6 +270,7 @@ class ParallelComputationalJobManager(ComputationalJobManager):
             fold_ids = list(range(len(train_val_iter)))
             return self._map(_task_wrap, fold_ids)
 
+    # TODO: PARALLEL - make a method for compute without a dataset (Optional dataset)
     def compute(self, dataset: SparkDataset, tasks: List[Callable[[ComputingSlot], T]]) -> List[T]:
         with self.session(dataset):
             def _task_wrap(task):
@@ -408,6 +412,7 @@ class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
         return len(self._tviter)
 
     def __getitem__(self, fold_id: int) -> SparkDataset:
+        # TODO: PARALLEL - incorrect implementation
         return self._tviter[fold_id]
 
     def __next__(self):
