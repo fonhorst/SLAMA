@@ -9,7 +9,7 @@ from lightautoml.utils.logging import verbosity_to_loglevel, set_stdout_level, a
 from lightautoml.utils.timer import PipelineTimer
 
 from sparklightautoml.automl.base import SparkAutoML
-from sparklightautoml.computations.manager import ComputationsSettings
+from sparklightautoml.computations.managers import ComputationsSettings
 from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
 from sparklightautoml.tasks.base import SparkTask
 

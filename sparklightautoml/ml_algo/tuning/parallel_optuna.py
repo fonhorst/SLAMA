@@ -6,8 +6,9 @@ import optuna
 from lightautoml.ml_algo.tuning.optuna import OptunaTuner
 from lightautoml.validation.base import HoldoutIterator
 
-from sparklightautoml.computations.manager import _SlotInitiatedTVIter, ComputationsManager, \
-    SequentialComputationsManager, ComputationsSettings, build_computations_manager
+from sparklightautoml.computations.builder import build_computations_manager
+from sparklightautoml.computations.managers import SequentialComputationsManager, ComputationsSettings
+from sparklightautoml.computations.utils import _SlotInitiatedTVIter
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator

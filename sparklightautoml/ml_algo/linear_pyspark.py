@@ -16,8 +16,7 @@ from pyspark.sql import functions as sf
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo, SparkMLModel, AveragingTransformer, \
     ComputationalParameters
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator, split_out_train, split_out_val
-from ..computations.manager import ComputationsManager
-from ..dataset.base import SparkDataset, PersistenceManager
+from ..dataset.base import SparkDataset
 from ..transformers.base import DropColumnsTransformer
 from ..utils import SparkDataFrame, log_exception
 

@@ -18,7 +18,8 @@ from pyspark.ml import PipelineModel, Transformer
 from pyspark.sql.session import SparkSession
 
 from .blend import SparkBlender, SparkBestModelSelector
-from ..computations.manager import build_computations_manager, ComputationsManager, ComputationsSettings
+from ..computations.builder import build_computations_manager
+from ..computations.managers import ComputationsManager, ComputationsSettings
 from ..dataset.base import SparkDataset, PersistenceLevel, PersistenceManager
 from ..dataset.persistence import PlainCachePersistenceManager
 from ..pipelines.base import TransformerInputOutputRoles

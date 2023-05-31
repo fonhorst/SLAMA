@@ -10,7 +10,8 @@ from pyspark.sql.pandas.functions import pandas_udf
 from pyspark.sql.types import StructField
 
 from sparklightautoml.pipelines.selection.base import SparkImportanceEstimator
-from ...computations.manager import ComputationsSettings, build_computations_manager
+from ...computations.builder import build_computations_manager
+from ...computations.managers import ComputationsSettings
 from ...dataset.base import SparkDataset
 from ...ml_algo.base import SparkTabularMLAlgo
 from ...validation.base import SparkBaseTrainValidIterator

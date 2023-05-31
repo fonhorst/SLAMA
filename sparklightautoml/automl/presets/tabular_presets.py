@@ -26,7 +26,7 @@ from sparklightautoml.automl.presets.utils import (
     replace_month_in_date,
     replace_year_in_date,
 )
-from sparklightautoml.computations.manager import ComputationsManagerFactory, AutoMLComputationsSettings
+from sparklightautoml.computations.builder import AutoMLComputationsSettings, ComputationsManagerFactory
 from sparklightautoml.dataset.base import SparkDataset, PersistenceManager
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
