@@ -1,8 +1,11 @@
+from typing import Optional
+
 import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as sf
 
 from sparklightautoml.computations.base import ComputationsManager
+from sparklightautoml.computations.parallel import ParallelComputationsManager
 from sparklightautoml.computations.sequential import SequentialComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
@@ -15,12 +18,41 @@ dataset = spark_dataset
 
 
 @pytest.mark.parametrize("manager,ml_algo", [
-    (SequentialComputationsManager(), SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True))
+    # (None, SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)),
+    # (SequentialComputationsManager(), SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)),
+    (
+            ParallelComputationsManager(parallelism=1, use_location_prefs_mode=False),
+            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    ),
+    # (
+    #         ParallelComputationsManager(parallelism=2, use_location_prefs_mode=False),
+    #         SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    # ),
+    # (
+    #         ParallelComputationsManager(parallelism=5, use_location_prefs_mode=False),
+    #         SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    # ),
+    (
+            ParallelComputationsManager(parallelism=1, use_location_prefs_mode=True),
+            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    ),
+    # (
+    #         ParallelComputationsManager(parallelism=2, use_location_prefs_mode=True),
+    #         SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    # ),
+    # (
+    #         ParallelComputationsManager(parallelism=5, use_location_prefs_mode=True),
+    #         SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    # ),
 ])
-def test_ml_algo(spark: SparkSession, dataset: SparkDataset, manager: ComputationsManager, ml_algo: SparkTabularMLAlgo):
+def test_ml_algo(spark: SparkSession,
+                 dataset: SparkDataset,
+                 manager: Optional[ComputationsManager],
+                 ml_algo: SparkTabularMLAlgo):
     tv_iter = SparkFoldsIterator(dataset)
 
-    ml_algo.computations_manager = manager
+    if manager is not None:
+        ml_algo.computations_manager = manager
 
     oof_preds = ml_algo.fit_predict(tv_iter)
     preds = ml_algo.predict(dataset)
