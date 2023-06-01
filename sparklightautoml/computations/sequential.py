@@ -10,6 +10,12 @@ class SequentialComputationsSession(ComputationsSession):
         super(SequentialComputationsSession, self).__init__()
         self._dataset = dataset
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
     def allocate(self) -> ComputationSlot:
         yield ComputationSlot("0", self._dataset)
 
