@@ -1,5 +1,10 @@
+import pytest
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as sf
 
+from sparklightautoml.computations.base import ComputationsManager
+from sparklightautoml.computations.parallel import ParallelComputationsManager
+from sparklightautoml.computations.sequential import SequentialComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
 from sparklightautoml.ml_algo.linear_pyspark import SparkLinearLBFGS
@@ -11,7 +16,13 @@ spark = spark_sess
 dataset = spark_dataset
 
 
-def test_ml_pipeline(spark: SparkSession, dataset: SparkDataset):
+@pytest.mark.parametrize("manager", [
+    None,
+    SequentialComputationsManager(),
+    ParallelComputationsManager(parallelism=5, use_location_prefs_mode=False),
+    ParallelComputationsManager(parallelism=5, use_location_prefs_mode=True)
+])
+def test_ml_pipeline(spark: SparkSession, dataset: SparkDataset, manager: ComputationsManager):
     # acc
     # DummyMlAlgo
     iterator = SparkFoldsIterator(dataset)
@@ -38,22 +49,20 @@ def test_ml_pipeline(spark: SparkSession, dataset: SparkDataset):
         assert pred_feat in test_preds.features
         assert pred_feat in test_preds.data.columns
 
-        assert oof_preds.data.count() == count
+        assert oof_preds.data.count() == iterator.get_validation_data().data.count()
         assert test_preds.data.count() == dataset.data.count()
 
         score = dataset.task.get_dataset_metric()
         oof_metric = score(oof_preds.data.select(
             SparkDataset.ID_COLUMN,
             sf.col(dataset.target_column).alias('target'),
-            sf.col(ml_algo.prediction_feature).alias('prediction')
+            sf.col(pred_feat).alias('prediction')
         ))
         test_metric = score(test_preds.data.select(
             SparkDataset.ID_COLUMN,
             sf.col(dataset.target_column).alias('target'),
-            sf.col(ml_algo.prediction_feature).alias('prediction')
+            sf.col(pred_feat).alias('prediction')
         ))
 
         assert oof_metric > 0
         assert test_metric > 0
-
-    pass
