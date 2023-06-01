@@ -32,7 +32,12 @@ def test_parallel_optuna_tuner(spark: SparkSession, dataset: SparkDataset, manag
     # create main entities
     iterator = SparkFoldsIterator(dataset).convert_to_holdout_iterator()
     count = iterator.get_validation_data().data.count()
-    tuner = ParallelOptunaTuner(n_trials=10, timeout=300, computations_manager=manager)
+    tuner = ParallelOptunaTuner(
+        n_trials=10,
+        timeout=60,
+        parallelism=manager.parallelism if manager else 1,
+        computations_manager=manager
+    )
     ml_algo = SparkBoostLGBM(
         default_params={'numIterations': 25},
         use_single_dataset_mode=True,

@@ -32,6 +32,7 @@ class SequentialComputationsManager(ComputationsManager):
         super(SequentialComputationsManager, self).__init__()
         self._dataset: Optional[SparkDataset] = None
 
+    @property
     def parallelism(self) -> int:
         return 1
 
