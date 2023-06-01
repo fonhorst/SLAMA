@@ -133,6 +133,7 @@ class SparkFoldsIterator(SparkBaseTrainValidIterator):
         """
         super().__init__(train)
 
+        # TODO: PARALLEL - potential bug here
         num_folds = train.data.select(sf.max(train.folds_column).alias("max")).first()["max"]
         self.n_folds = num_folds + 1
         if n_folds is not None:

@@ -162,13 +162,14 @@ def workdir() -> str:
 
 @pytest.fixture(scope="function")
 def dataset(spark: SparkSession) -> SparkDataset:
+    num_folds = 5
     data = [{
         SparkDataset.ID_COLUMN: i,
         "a": i + 1,
         "b": i * 10,
         "c": i / 2,
         "target": 0 if random.random() < 0.6 else 1,
-        "fold": random.randint(0, 4)
+        "fold": i % num_folds
     } for i in range(10)]
     df = spark.createDataFrame(data).cache()
     df.write.mode('overwrite').format('noop').save()
