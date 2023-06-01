@@ -6,7 +6,7 @@ from lightautoml.pipelines.ml.nested_ml_pipe import (
     NestedTabularMLAlgo,
 )
 
-from sparklightautoml.computations.managers import ComputationsSettings
+from sparklightautoml.computations.base import ComputationsSettings
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
 from sparklightautoml.pipelines.ml.base import SparkMLPipeline

@@ -1,7 +1,8 @@
 from typing import Optional, Tuple, Dict, Any, Union
 
-from sparklightautoml.computations.managers import ComputationsManager, ParallelComputationsManager, \
-    SequentialComputationsManager, ComputationsSettings
+from sparklightautoml.computations.base import ComputationsManager, ComputationsSettings
+from sparklightautoml.computations.sequential import SequentialComputationsManager
+from sparklightautoml.computations.parallel import ParallelComputationsManager
 
 # either named profile and parallelism or parallelism settings or factory
 AutoMLComputationsSettings = Union[Tuple[str, int], Dict[str, Any], 'ComputationManagerFactory']

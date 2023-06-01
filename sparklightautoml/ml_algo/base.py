@@ -16,7 +16,7 @@ from pyspark.sql import functions as sf
 from pyspark.sql.types import IntegerType
 
 from sparklightautoml.computations.builder import build_computations_manager
-from sparklightautoml.computations.managers import ComputationsManager, ComputationSlot, ComputationsSettings
+from sparklightautoml.computations.base import ComputationsManager, ComputationSlot, ComputationsSettings
 from sparklightautoml.dataset.base import SparkDataset, PersistenceLevel
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.pipelines.base import TransformerInputOutputRoles

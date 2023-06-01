@@ -19,7 +19,7 @@ from pyspark.sql.session import SparkSession
 
 from .blend import SparkBlender, SparkBestModelSelector
 from ..computations.builder import build_computations_manager
-from ..computations.managers import ComputationsManager, ComputationsSettings
+from ..computations.base import ComputationsManager, ComputationsSettings
 from ..dataset.base import SparkDataset, PersistenceLevel, PersistenceManager
 from ..dataset.persistence import PlainCachePersistenceManager
 from ..pipelines.base import TransformerInputOutputRoles

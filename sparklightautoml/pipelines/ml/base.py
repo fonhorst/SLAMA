@@ -15,7 +15,7 @@ from ..base import TransformerInputOutputRoles
 from ..features.base import SparkFeaturesPipeline, SparkEmptyFeaturePipeline
 from ..selection.base import SparkSelectionPipelineWrapper
 from ...computations.builder import build_computations_manager
-from ...computations.managers import ComputationsSettings
+from ...computations.base import ComputationsSettings
 from ...dataset.base import SparkDataset
 from ...ml_algo.base import SparkTabularMLAlgo
 from ...validation.base import SparkBaseTrainValidIterator

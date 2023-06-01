@@ -1,7 +1,7 @@
 import logging.config
 
 from examples.spark.examples_utils import get_spark_session, get_dataset
-from sparklightautoml.computations.managers import ParallelComputationsManager
+from sparklightautoml.computations.parallel import ParallelComputationsManager
 from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
 from sparklightautoml.pipelines.features.lgb_pipeline import SparkLGBAdvancedPipeline, SparkLGBSimpleFeatures
 from sparklightautoml.pipelines.features.linear_pipeline import SparkLinearFeatures
