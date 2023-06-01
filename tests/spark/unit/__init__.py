@@ -161,7 +161,7 @@ def workdir() -> str:
 
 
 @pytest.fixture(scope="function")
-def dataset() -> SparkDataset:
+def dataset(spark: SparkSession) -> SparkDataset:
     data = [{
         SparkDataset.ID_COLUMN: i,
         "a": i + 1,

@@ -1,6 +1,7 @@
 import collections
 import itertools
 import threading
+from copy import deepcopy
 
 import pytest
 from pyspark.sql import SparkSession
@@ -111,6 +112,31 @@ def test_compute_on_train_val_iter(spark: SparkSession, dataset: SparkDataset,
     task = build_fold_func(acc)
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
+    results = manager.compute_folds(tv_iter, task)
+    unique_thread_ids = set(acc)
+
+    assert results == list(range(K))
+    assert len(unique_thread_ids) == max(K, parallelism)
+
+
+def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
+    parallelism = 5
+    acc = collections.deque()
+    tv_iter = SparkFoldsIterator(dataset, n_folds=K)
+    task = build_fold_func(acc)
+
+    manager = ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=True)
+
+    manager = deepcopy(manager)
+
+    results = manager.compute_folds(tv_iter, task)
+    unique_thread_ids = set(acc)
+
+    assert results == list(range(K))
+    assert len(unique_thread_ids) == max(K, parallelism)
+
+    manager = deepcopy(manager)
+
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
