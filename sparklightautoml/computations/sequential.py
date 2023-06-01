@@ -35,6 +35,5 @@ class SequentialComputationsManager(ComputationsManager):
     def parallelism(self) -> int:
         return 1
 
-    @contextmanager
     def session(self, dataset: Optional[SparkDataset] = None) -> SequentialComputationsSession:
         return SequentialComputationsSession(dataset)

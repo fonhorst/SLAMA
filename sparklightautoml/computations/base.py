@@ -82,9 +82,11 @@ class ComputationsManager(ABC):
                 with session.allocate() as slot:
                     local_tv_iter = deepcopy(tv_iter)
                     local_tv_iter.train = slot.dataset
-                    slot = deepcopy(slot)
-                    slot.dataset = local_tv_iter[fold_id]
-                    return task(fold_id, slot)
+                    slot.dataset = None
+                    new_slot = deepcopy(slot)
+                    new_slot.dataset = local_tv_iter[fold_id]
+                    slot.dataset = local_tv_iter.train
+                    return task(fold_id, new_slot)
 
             fold_ids = list(range(len(train_val_iter)))
             return session.map_and_compute(_task_wrap, fold_ids)
