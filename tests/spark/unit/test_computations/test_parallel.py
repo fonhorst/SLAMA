@@ -60,8 +60,6 @@ def build_fold_func(acc: collections.deque, base_dataset_uid: str, use_location_
     return _func
 
 
-# TODO: PARALLEL - need to add test for exceptions
-
 def build_idx_func(acc: collections.deque):
     def _func(idx: int) -> int:
         acc.append(threading.get_ident())

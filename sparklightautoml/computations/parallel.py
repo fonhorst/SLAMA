@@ -1,21 +1,17 @@
 import math
 import warnings
 from contextlib import contextmanager
-from copy import deepcopy
 from multiprocessing.pool import ThreadPool
 from queue import Queue
 from typing import Optional, List, Callable
 
-from pyspark import inheritable_thread_target
-
 from sparklightautoml.computations.base import ComputationsSession, ComputationSlot, T, R, logger, \
     ComputationsManager
 from sparklightautoml.computations.utils import inheritable_thread_target_with_exceptions_catcher, get_executors, \
-    get_executors_cores, deecopy_tviter_without_dataset
+    get_executors_cores
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.transformers.scala_wrappers.preffered_locs_partition_coalescer import \
     PrefferedLocsPartitionCoalescerTransformer
-from sparklightautoml.validation.base import SparkBaseTrainValidIterator
 
 
 class ParallelComputationsSession(ComputationsSession):

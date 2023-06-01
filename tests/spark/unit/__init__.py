@@ -54,7 +54,8 @@ def create_spark_session(warehouse_path: str):
         SparkSession
         .builder
         .appName("LAMA-test-app")
-        .master("local-cluster[2,2,2048]")
+        # .master("local-cluster[2,2,2048]")
+        .master("local[4]")
         .config("spark.driver.memory", "8g")
         .config("spark.jars", JAR_PATH)
         .config("spark.jars.packages", "com.microsoft.azure:synapseml_2.12:0.9.5")
