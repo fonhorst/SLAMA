@@ -24,7 +24,7 @@ class ComputationSlot:
     num_threads_per_executor: Optional[int] = None
 
 
-class ComputationsSession(ContextDecorator, ABC):
+class ComputationsSession(ABC):
     @abstractmethod
     def __enter__(self):
         ...
@@ -34,6 +34,7 @@ class ComputationsSession(ContextDecorator, ABC):
         ...
 
     @abstractmethod
+    @contextmanager
     def allocate(self) -> ComputationSlot:
         """
         Thread safe method

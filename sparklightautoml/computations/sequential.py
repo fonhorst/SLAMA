@@ -16,6 +16,7 @@ class SequentialComputationsSession(ComputationsSession):
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
+    @contextmanager
     def allocate(self) -> ComputationSlot:
         yield ComputationSlot("0", self._dataset)
 
