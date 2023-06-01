@@ -170,7 +170,8 @@ def dataset(spark: SparkSession) -> SparkDataset:
         "target": 0 if random.random() < 0.6 else 1,
         "fold": random.randint(0, 4)
     } for i in range(10)]
-    df = spark.createDataFrame(data)
+    df = spark.createDataFrame(data).cache()
+    df.write.mode('overwrite').format('noop').save()
     ds = SparkDataset(
         data=df,
         roles={"a": NumericRole(), "b": NumericRole(), "c": NumericRole()},

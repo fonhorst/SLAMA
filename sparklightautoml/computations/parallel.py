@@ -40,7 +40,8 @@ class ParallelComputationsSession(ComputationsSession):
         self._available_computing_slots_queue = None
         if self._computing_slots is not None:
             for cslot in self._computing_slots:
-                cslot.dataset.unpersist()
+                if cslot.dataset is not None:
+                    cslot.dataset.unpersist()
 
     @contextmanager
     def allocate(self) -> ComputationSlot:
@@ -51,11 +52,21 @@ class ParallelComputationsSession(ComputationsSession):
 
     def map_and_compute(self, func: Callable[[R], T], tasks: List[R]) -> List[T]:
         assert self._pool is not None
-        return self._pool.map(inheritable_thread_target_with_exceptions_catcher(func), tasks)
+        # TODO: PARALLEL - probably, is not fully correct and needs to be integrated on the thread pool level, 
+        #  inlcuding one-shot threads
+        return self._pool.map(
+            lambda task: inheritable_thread_target_with_exceptions_catcher(lambda: func(task))(), 
+            tasks
+        )
 
     def compute(self, tasks: List[Callable[[], T]]) -> List[T]:
         assert self._pool is not None
-        return self._pool.map(inheritable_thread_target_with_exceptions_catcher(lambda f: f()), tasks)
+        # TODO: PARALLEL - probably, is not fully correct and needs to be integrated on the thread pool level, 
+        #  inlcuding one-shot threads
+        return self._pool.map(
+            lambda f: inheritable_thread_target_with_exceptions_catcher(f)(), 
+            tasks
+        )
 
     def _make_computing_slots(self, dataset: Optional[SparkDataset]) -> List[ComputationSlot]:
         if dataset is not None and self._use_location_prefs_mode:

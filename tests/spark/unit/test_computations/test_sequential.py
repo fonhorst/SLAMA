@@ -13,7 +13,7 @@ from .. import spark as spark_sess, dataset as spark_dataset
 spark = spark_sess
 dataset = spark_dataset
 
-K = 5
+K = 20
 
 
 def build_func(acc: collections.deque, seq_id: int):
@@ -99,22 +99,24 @@ def test_compute_on_dataset(spark: SparkSession, dataset: SparkDataset):
 
 
 def test_compute_on_train_val_iter(spark: SparkSession, dataset: SparkDataset):
+    n_folds = dataset.num_folds
     acc = collections.deque()
-    tv_iter = SparkFoldsIterator(dataset, n_folds=K)
+    tv_iter = SparkFoldsIterator(dataset)
     task = build_fold_func(acc)
 
     manager = SequentialComputationsManager()
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
-    assert results == list(range(K))
+    assert results == list(range(n_folds))
     assert len(unique_thread_ids) == 1
     assert next(iter(unique_thread_ids)) == threading.get_ident()
 
 
 def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
+    n_folds = dataset.num_folds
     acc = collections.deque()
-    tv_iter = SparkFoldsIterator(dataset, n_folds=K)
+    tv_iter = SparkFoldsIterator(dataset)
     task = build_fold_func(acc)
 
     manager = SequentialComputationsManager()
@@ -124,7 +126,7 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
-    assert results == list(range(K))
+    assert results == list(range(n_folds))
     assert len(unique_thread_ids) == 1
     assert next(iter(unique_thread_ids)) == threading.get_ident()
 
@@ -133,7 +135,7 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
-    assert results == list(range(K))
+    assert results == list(range(n_folds))
     assert len(unique_thread_ids) == 1
     assert next(iter(unique_thread_ids)) == threading.get_ident()
 

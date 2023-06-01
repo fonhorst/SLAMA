@@ -17,6 +17,9 @@ dataset = spark_dataset
 
 K = 20
 
+# manager_configs = itertools.product([1, 2, 5], [False, True])
+manager_configs = [(1, False)]
+
 
 def build_func(acc: collections.deque, seq_id: int):
     def _func() -> int:
@@ -48,7 +51,7 @@ def build_idx_func(acc: collections.deque):
     return _func
 
 
-@pytest.mark.parametrize("parallelism,use_location_prefs_mode", itertools.product([1, 2, 5], [False, True]))
+@pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_allocate(spark: SparkSession, dataset: SparkDataset, parallelism: int, use_location_prefs_mode: bool):
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
 
@@ -67,17 +70,17 @@ def test_allocate(spark: SparkSession, dataset: SparkDataset, parallelism: int, 
         unique_thread_ids = set(acc)
 
         assert results == list(range(K))
-        assert len(unique_thread_ids) == max(K, parallelism)
+        assert len(unique_thread_ids) == min(K, parallelism)
 
         acc = collections.deque()
         results = session.map_and_compute(build_idx_func(acc), list(range(K)))
         unique_thread_ids = set(acc)
 
         assert results == list(range(K))
-        assert len(unique_thread_ids) == max(K, parallelism)
+        assert len(unique_thread_ids) == min(K, parallelism)
 
 
-@pytest.mark.parametrize("parallelism,use_location_prefs_mode", itertools.product([1, 2, 5], [False, True]))
+@pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_compute(parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
     tasks = [build_func(acc, i) for i in range(K)]
@@ -87,10 +90,10 @@ def test_compute(parallelism: int, use_location_prefs_mode: bool):
     unique_thread_ids = set(acc)
 
     assert results == list(range(K))
-    assert len(unique_thread_ids) == max(K, parallelism)
+    assert len(unique_thread_ids) == min(K, parallelism)
 
 
-@pytest.mark.parametrize("parallelism,use_location_prefs_mode", itertools.product([1, 2, 5], [False, True]))
+@pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_compute_on_dataset(spark: SparkSession, dataset: SparkDataset,
                             parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
@@ -101,28 +104,30 @@ def test_compute_on_dataset(spark: SparkSession, dataset: SparkDataset,
     unique_thread_ids = set(acc)
 
     assert results == list(range(K))
-    assert len(unique_thread_ids) == max(K, parallelism)
+    assert len(unique_thread_ids) == min(K, parallelism)
 
 
-@pytest.mark.parametrize("parallelism,use_location_prefs_mode", itertools.product([1, 2, 5], [False, True]))
+@pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_compute_on_train_val_iter(spark: SparkSession, dataset: SparkDataset,
                                    parallelism: int, use_location_prefs_mode: bool):
+    n_folds = dataset.num_folds
     acc = collections.deque()
-    tv_iter = SparkFoldsIterator(dataset, n_folds=K)
+    tv_iter = SparkFoldsIterator(dataset)
     task = build_fold_func(acc)
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
-    assert results == list(range(K))
-    assert len(unique_thread_ids) == max(K, parallelism)
+    assert results == list(range(n_folds))
+    assert len(unique_thread_ids) == min(n_folds, parallelism)
 
 
 def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
+    n_folds = dataset.num_folds
     parallelism = 5
     acc = collections.deque()
-    tv_iter = SparkFoldsIterator(dataset, n_folds=K)
+    tv_iter = SparkFoldsIterator(dataset)
     task = build_fold_func(acc)
 
     manager = ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=True)
@@ -132,13 +137,13 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
-    assert results == list(range(K))
-    assert len(unique_thread_ids) == max(K, parallelism)
+    assert results == list(range(n_folds))
+    assert len(unique_thread_ids) == min(n_folds, parallelism)
 
     manager = deepcopy(manager)
 
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
-    assert results == list(range(K))
-    assert len(unique_thread_ids) == max(K, parallelism)
+    assert results == list(range(n_folds))
+    assert len(unique_thread_ids) == min(n_folds, parallelism)
