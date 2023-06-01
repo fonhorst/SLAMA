@@ -6,6 +6,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as sf
 
 from sparklightautoml.computations.base import ComputationsManager
+from sparklightautoml.computations.parallel import ParallelComputationsManager
+from sparklightautoml.computations.sequential import SequentialComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
 from sparklightautoml.ml_algo.tuning.parallel_optuna import ParallelOptunaTuner
@@ -18,20 +20,24 @@ dataset = spark_dataset
 
 @pytest.mark.parametrize("manager", [
     None,
-    # SequentialComputationsManager(),
-    # ParallelComputationsManager(parallelism=1, use_location_prefs_mode=False),
-    # ParallelComputationsManager(parallelism=2, use_location_prefs_mode=False),
-    # ParallelComputationsManager(parallelism=5, use_location_prefs_mode=False),
-    # ParallelComputationsManager(parallelism=1, use_location_prefs_mode=True),
-    # ParallelComputationsManager(parallelism=2, use_location_prefs_mode=True),
-    # ParallelComputationsManager(parallelism=5, use_location_prefs_mode=True)
+    SequentialComputationsManager(),
+    ParallelComputationsManager(parallelism=1, use_location_prefs_mode=False),
+    ParallelComputationsManager(parallelism=2, use_location_prefs_mode=False),
+    ParallelComputationsManager(parallelism=5, use_location_prefs_mode=False),
+    ParallelComputationsManager(parallelism=1, use_location_prefs_mode=True),
+    ParallelComputationsManager(parallelism=2, use_location_prefs_mode=True),
+    ParallelComputationsManager(parallelism=5, use_location_prefs_mode=True)
 ])
 def test_parallel_optuna_tuner(spark: SparkSession, dataset: SparkDataset, manager: Optional[ComputationsManager]):
     # create main entities
     iterator = SparkFoldsIterator(dataset).convert_to_holdout_iterator()
     count = iterator.get_validation_data().data.count()
-    tuner = ParallelOptunaTuner(n_trials=20, timeout=300, computations_manager=manager)
-    ml_algo = SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    tuner = ParallelOptunaTuner(n_trials=10, timeout=300, computations_manager=manager)
+    ml_algo = SparkBoostLGBM(
+        default_params={'numIterations': 25},
+        use_single_dataset_mode=True,
+        use_barrier_execution_mode=True
+    )
 
     # fit and predict
     model, oof_preds = tune_and_fit_predict(ml_algo, tuner, iterator)
