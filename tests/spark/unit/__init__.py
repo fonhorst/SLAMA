@@ -171,7 +171,7 @@ def dataset(spark: SparkSession) -> SparkDataset:
         "c": i / 2,
         "target": 0 if random.random() < 0.6 else 1,
         "fold": i % num_folds
-    } for i in range(10)]
+    } for i in range(10000)]
     df = spark.createDataFrame(data).cache()
     df.write.mode('overwrite').format('noop').save()
     ds = SparkDataset(

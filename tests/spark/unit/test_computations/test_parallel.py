@@ -39,22 +39,31 @@ def build_func_with_exception(acc: collections.deque, seq_id: int):
     return _func
 
 
-def build_func_on_dataset(acc: collections.deque, seq_id: int, base_dataset_uid: str, use_location_prefs_mode: bool):
+def build_func_on_dataset(
+        acc: collections.deque,
+        seq_id: int,
+        use_location_prefs_mode: bool,
+        base_dataset: SparkDataset
+):
     def _func(slot: ComputationSlot) -> int:
         assert slot.dataset is not None
         if use_location_prefs_mode:
-            assert slot.dataset.uid != base_dataset_uid
+            assert slot.dataset.uid != base_dataset.uid
         else:
-            assert slot.dataset.uid == base_dataset_uid
+            assert slot.dataset.uid == base_dataset.uid
+        assert slot.dataset.data.count() == base_dataset.data.count()
+        assert slot.dataset.data.columns == base_dataset.data.columns
         acc.append(threading.get_ident())
         return seq_id
     return _func
 
 
-def build_fold_func(acc: collections.deque, base_dataset_uid: str, use_location_prefs_mode: bool):
+def build_fold_func(acc: collections.deque, base_dataset: SparkDataset):
     def _func(fold_id: int, slot: ComputationSlot) -> int:
         assert slot.dataset is not None
-        assert slot.dataset.uid != base_dataset_uid
+        assert slot.dataset.uid != base_dataset.uid
+        assert slot.dataset.data.count() > 0
+        assert [c for c in slot.dataset.data.columns if c != 'is_val'] == base_dataset.data.columns
         acc.append(threading.get_ident())
         return fold_id
     return _func
@@ -123,7 +132,7 @@ def test_compute_with_exceptions(spark: SparkSession, parallelism: int, use_loca
 def test_compute_on_dataset(spark: SparkSession, dataset: SparkDataset,
                             parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
-    tasks = [build_func_on_dataset(acc, i, dataset.uid, use_location_prefs_mode) for i in range(K)]
+    tasks = [build_func_on_dataset(acc, i, use_location_prefs_mode, base_dataset=dataset) for i in range(K)]
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     results = manager.compute_on_dataset(dataset, tasks)
@@ -139,7 +148,7 @@ def test_compute_on_train_val_iter(spark: SparkSession, dataset: SparkDataset,
     n_folds = dataset.num_folds
     acc = collections.deque()
     tv_iter = SparkFoldsIterator(dataset)
-    task = build_fold_func(acc, dataset.uid, use_location_prefs_mode)
+    task = build_fold_func(acc, base_dataset=dataset)
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     results = manager.compute_folds(tv_iter, task)
@@ -160,7 +169,7 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     manager = deepcopy(manager)
 
     acc = collections.deque()
-    task = build_fold_func(acc, dataset.uid, use_location_prefs_mode)
+    task = build_fold_func(acc, base_dataset=dataset)
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
@@ -170,7 +179,7 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     manager = deepcopy(manager)
 
     acc = collections.deque()
-    task = build_fold_func(acc, dataset.uid, use_location_prefs_mode)
+    task = build_fold_func(acc, base_dataset=dataset)
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 

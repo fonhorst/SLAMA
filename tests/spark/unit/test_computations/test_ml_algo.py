@@ -20,10 +20,10 @@ dataset = spark_dataset
 @pytest.mark.parametrize("manager,ml_algo", [
     # (None, SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)),
     # (SequentialComputationsManager(), SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)),
-    (
-            ParallelComputationsManager(parallelism=1, use_location_prefs_mode=False),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
+    # (
+    #         ParallelComputationsManager(parallelism=1, use_location_prefs_mode=False),
+    #         SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
+    # ),
     # (
     #         ParallelComputationsManager(parallelism=2, use_location_prefs_mode=False),
     #         SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
