@@ -65,7 +65,10 @@ def test_allocate(spark: SparkSession, dataset: SparkDataset):
 
                 acc = collections.deque()
                 results = session.map_and_compute(build_idx_func(acc), list(range(K)))
+                unique_thread_ids = set(acc)
                 assert results == list(range(K))
+                assert len(unique_thread_ids) == 1
+                assert next(iter(unique_thread_ids)) == threading.get_ident()
 
 
 def test_compute():
