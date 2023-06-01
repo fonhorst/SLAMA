@@ -29,6 +29,7 @@ dataset = spark_dataset
 def test_parallel_optuna_tuner(spark: SparkSession, dataset: SparkDataset, manager: Optional[ComputationsManager]):
     # create main entities
     iterator = SparkFoldsIterator(dataset).convert_to_holdout_iterator()
+    count = iterator.get_validation_data().data.count()
     tuner = ParallelOptunaTuner(n_trials=20, timeout=300, computations_manager=manager)
     ml_algo = SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
 
@@ -41,7 +42,7 @@ def test_parallel_optuna_tuner(spark: SparkSession, dataset: SparkDataset, manag
     assert ml_algo.prediction_feature in test_preds.features
     assert ml_algo.prediction_feature in test_preds.data.columns
 
-    assert oof_preds.data.count() == dataset.data.count()
+    assert oof_preds.data.count() == count
     assert test_preds.data.count() == dataset.data.count()
 
     score = dataset.task.get_dataset_metric()

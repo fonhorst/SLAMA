@@ -109,7 +109,7 @@ class SparkHoldoutIterator(SparkBaseTrainValidIterator):
             self.train.unpersist()
 
     def get_validation_data(self) -> SparkDataset:
-        valid_sdf = self.train.data.where(sf.col(self.TRAIN_VAL_COLUMN) == 0).drop(self.TRAIN_VAL_COLUMN)
+        valid_sdf = self.train.data.where(sf.col(self.TRAIN_VAL_COLUMN) == 1).drop(self.TRAIN_VAL_COLUMN)
         valid = self.train.empty()
         valid.set_data(valid_sdf, self.train.features, self.train.roles)
         return valid

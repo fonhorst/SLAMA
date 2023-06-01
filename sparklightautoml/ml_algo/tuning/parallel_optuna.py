@@ -1,14 +1,14 @@
 import logging
 from copy import deepcopy
-from typing import Optional, Tuple, Callable, Iterable
+from typing import Optional, Tuple, Callable, Iterable, Union
 
 import optuna
-from lightautoml.ml_algo.tuning.optuna import OptunaTuner
-from lightautoml.validation.base import HoldoutIterator
+from lightautoml.ml_algo.tuning.optuna import OptunaTuner, TunableAlgo
+from lightautoml.validation.base import HoldoutIterator, TrainValidIterator
 
 from sparklightautoml.computations.builder import build_computations_manager
 from sparklightautoml.computations.base import ComputationsSettings, \
-    ComputationsManager
+    ComputationsManager, ComputationsSession
 from sparklightautoml.computations.sequential import SequentialComputationsManager
 from sparklightautoml.computations.utils import deecopy_tviter_without_dataset
 from sparklightautoml.dataset.base import SparkDataset
@@ -30,6 +30,7 @@ class ParallelOptunaTuner(OptunaTuner):
         super().__init__(timeout, n_trials, direction, fit_on_holdout, random_state)
         self._parallelism = parallelism
         self._computations_manager = build_computations_manager(computations_settings=computations_manager)
+        self._session: Optional[ComputationsSession] = None
 
     def fit(self, ml_algo: SparkTabularMLAlgo, train_valid_iterator: Optional[SparkBaseTrainValidIterator] = None) \
             -> Tuple[Optional[SparkTabularMLAlgo], Optional[SparkDataset]]:
@@ -102,6 +103,9 @@ class ParallelOptunaTuner(OptunaTuner):
             return ml_algo, preds_ds
         except optuna.exceptions.OptunaError:
             return None, None
+        except:
+            logger.error("Error during parameters optimization", exc_info=True)
+            raise
 
     def _optimize(self,
                   ml_algo: SparkTabularMLAlgo,
@@ -117,12 +121,12 @@ class ParallelOptunaTuner(OptunaTuner):
         ml_algo.computations_manager = cm
         trial_ml_algo.computations_manager = SequentialComputationsManager()
 
-        with self._computations_manager.session(train_valid_iterator.train):
+        with self._computations_manager.session(train_valid_iterator.train) as self._session:
             self.study.optimize(
                 func=self._get_objective(
                     ml_algo=trial_ml_algo,
                     estimated_n_trials=self.estimated_n_trials,
-                    train_valid_iterator=_SlotInitiatedTVIter(self._computations_manager, train_valid_iterator),
+                    train_valid_iterator=train_valid_iterator,
                 ),
                 n_jobs=self._parallelism,
                 n_trials=self.n_trials,
@@ -130,44 +134,97 @@ class ParallelOptunaTuner(OptunaTuner):
                 callbacks=[update_trial_time]
             )
 
+        self._session = None
 
-class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
-    def __init__(self, computations_manager: ComputationsManager, tviter: SparkBaseTrainValidIterator):
-        super().__init__(None)
-        self._computations_manager = computations_manager
-        self._tviter = deecopy_tviter_without_dataset(tviter)
+    def _get_objective(self,
+                       ml_algo: TunableAlgo,
+                       estimated_n_trials: int,
+                       train_valid_iterator: SparkBaseTrainValidIterator) \
+            -> Callable[[optuna.trial.Trial], Union[float, int]]:
+        assert isinstance(ml_algo, SparkTabularMLAlgo)
 
-    def __iter__(self) -> Iterable:
-        def _iter():
-            with self._computations_manager.allocate() as slot:
-                self._tviter.train = slot.dataset
-                for elt in self._tviter:
-                    yield elt
-                self._tviter = None
+        def objective(trial: optuna.trial.Trial) -> float:
+            with self._session.allocate() as slot:
+                assert slot.dataset is not None
+                _ml_algo = deepcopy(ml_algo)
+                tv_iter = deecopy_tviter_without_dataset(train_valid_iterator)
+                tv_iter.train = slot.dataset
 
-        return _iter()
+                optimization_search_space = _ml_algo.optimization_search_space
 
-    def __len__(self) -> Optional[int]:
-        return len(self._tviter)
+                if not optimization_search_space:
+                    optimization_search_space = _ml_algo._get_default_search_spaces(
+                        suggested_params=_ml_algo.init_params_on_input(tv_iter),
+                        estimated_n_trials=estimated_n_trials,
+                    )
 
-    def __getitem__(self, fold_id: int) -> SparkDataset:
-        with self._computations_manager.allocate() as slot:
-            self._tviter.train = slot.dataset
-            dataset = self._tviter[fold_id]
-            self._tviter = None
-        return dataset
+                if callable(optimization_search_space):
+                    _ml_algo.params = optimization_search_space(
+                        trial=trial,
+                        optimization_search_space=optimization_search_space,
+                        suggested_params=_ml_algo.init_params_on_input(tv_iter),
+                    )
+                else:
+                    _ml_algo.params = self._sample(
+                        trial=trial,
+                        optimization_search_space=optimization_search_space,
+                        suggested_params=_ml_algo.init_params_on_input(tv_iter),
+                    )
 
-    def __next__(self):
-        raise NotImplementedError("NotSupportedMethod")
+                output_dataset = _ml_algo.fit_predict(train_valid_iterator=tv_iter)
 
-    def freeze(self) -> 'SparkBaseTrainValidIterator':
-        raise NotImplementedError("NotSupportedMethod")
+                return _ml_algo.score(output_dataset)
 
-    def unpersist(self, skip_val: bool = False):
-        raise NotImplementedError("NotSupportedMethod")
+        return objective
 
-    def get_validation_data(self) -> SparkDataset:
-        return self._tviter.get_validation_data()
 
-    def convert_to_holdout_iterator(self):
-        return _SlotInitiatedTVIter(self._computations_manager, self._tviter.convert_to_holdout_iterator())
+# class _SlotInitiatedTVIter(SparkBaseTrainValidIterator):
+#     def __init__(self, computations_session: ComputationsSession, tviter: SparkBaseTrainValidIterator):
+#         super().__init__(tviter.train)
+#         self._computations_session = computations_session
+#         self._tviter = deecopy_tviter_without_dataset(tviter)
+#
+#     def __iter__(self) -> Iterable:
+#         def _iter():
+#             with self._computations_session.allocate() as slot:
+#                 tviter = deepcopy(self._tviter)
+#                 tviter.train = slot.dataset
+#                 for elt in self._tviter:
+#                     yield elt
+#
+#         return _iter()
+#
+#     def __len__(self) -> Optional[int]:
+#         return len(self._tviter)
+#
+#     def __getitem__(self, fold_id: int) -> SparkDataset:
+#         raise NotImplementedError("NotSupportedMethod")
+#         # with self._computations_session.allocate() as slot:
+#         #     tviter = deepcopy(self._tviter)
+#         #     tviter.train = slot.dataset
+#         #     dataset = tviter[fold_id]
+#         #
+#         # return dataset
+#
+#     def __next__(self):
+#         raise NotImplementedError("NotSupportedMethod")
+#
+#     # @property
+#     # def train(self) -> SparkDataset:
+#     #     raise NotImplementedError("NotSupportedMethod")
+#     #
+#     # @train.setter
+#     # def train(self, value: SparkDataset):
+#     #     raise NotImplementedError("NotSupportedMethod")
+#
+#     def freeze(self) -> 'SparkBaseTrainValidIterator':
+#         raise NotImplementedError("NotSupportedMethod")
+#
+#     def unpersist(self, skip_val: bool = False):
+#         raise NotImplementedError("NotSupportedMethod")
+#
+#     def get_validation_data(self) -> SparkDataset:
+#         return self._tviter.get_validation_data()
+#
+#     def convert_to_holdout_iterator(self):
+#         return _SlotInitiatedTVIter(self._computations_session, self._tviter.convert_to_holdout_iterator())
