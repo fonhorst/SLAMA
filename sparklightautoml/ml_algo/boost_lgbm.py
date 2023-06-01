@@ -151,6 +151,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         mini_batch_size: int = 5000,
         seed: int = 42,
         parallelism: int = 1,
+        execution_mode: str = "bulk",
         use_barrier_execution_mode: bool = False,
         experimental_parallel_mode: bool = False,
         persist_output_dataset: bool = True,
@@ -172,6 +173,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         self._convert_to_onnx = convert_to_onnx
         self._mini_batch_size = mini_batch_size
         self._parallelism = parallelism
+        self._executin_mode = execution_mode
         self._use_barrier_execution_mode = use_barrier_execution_mode
         self._experimental_parallel_mode = experimental_parallel_mode
 
@@ -427,6 +429,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
 
         lgbm = lgbm_booster(
             **params,
+            executionMode=self._executin_mode,
             featuresCol=self._assembler.getOutputCol(),
             labelCol=train.target_column,
             validationIndicatorCol=validation_column,
