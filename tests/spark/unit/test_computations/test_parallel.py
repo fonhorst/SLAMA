@@ -53,6 +53,8 @@ def build_func_on_dataset(
             assert slot.dataset.uid == base_dataset.uid
         assert slot.dataset.data.count() == base_dataset.data.count()
         assert slot.dataset.data.columns == base_dataset.data.columns
+        assert slot.dataset.features == base_dataset.features
+        assert slot.dataset.roles == base_dataset.roles
         acc.append(threading.get_ident())
         return seq_id
     return _func
@@ -64,6 +66,8 @@ def build_fold_func(acc: collections.deque, base_dataset: SparkDataset):
         assert slot.dataset.uid != base_dataset.uid
         assert slot.dataset.data.count() > 0
         assert [c for c in slot.dataset.data.columns if c != 'is_val'] == base_dataset.data.columns
+        assert slot.dataset.features == base_dataset.features
+        assert slot.dataset.roles == base_dataset.roles
         acc.append(threading.get_ident())
         return fold_id
     return _func

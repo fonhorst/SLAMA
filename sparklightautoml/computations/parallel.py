@@ -110,7 +110,7 @@ class ParallelComputationsSession(ComputationsSession):
             coalesced_data.write.mode('overwrite').format('noop').save()
 
             coalesced_dataset = dataset.empty()
-            coalesced_dataset.set_data(coalesced_data, coalesced_dataset.features, coalesced_dataset.roles,
+            coalesced_dataset.set_data(coalesced_data, dataset.features, dataset.roles,
                                        name=f"CoalescedForPrefLocs_{dataset.name}")
 
             dataset_slots.append(ComputationSlot(
