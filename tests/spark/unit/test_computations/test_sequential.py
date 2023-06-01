@@ -2,6 +2,7 @@ import collections
 import threading
 from copy import deepcopy
 
+import pytest
 from pyspark.sql import SparkSession
 
 from sparklightautoml.computations.base import ComputationSlot
@@ -14,6 +15,11 @@ spark = spark_sess
 dataset = spark_dataset
 
 K = 20
+
+
+class TestWorkerException(Exception):
+    def __init__(self, id: int):
+        super(TestWorkerException, self).__init__(f"Intentional exception in task {id}")
 
 
 def build_func(acc: collections.deque, seq_id: int):
@@ -85,6 +91,22 @@ def test_compute():
     assert next(iter(unique_thread_ids)) == threading.get_ident()
 
 
+def build_func_with_exception(acc: collections.deque, seq_id: int):
+    def _func():
+        acc.append(threading.get_ident())
+        raise TestWorkerException(seq_id)
+    return _func
+
+
+def test_compute_with_exceptions(spark: SparkSession):
+    acc = collections.deque()
+    tasks = [*(build_func_with_exception(acc, i) for i in range(K, K + 3)), *(build_func(acc, i) for i in range(K))]
+
+    manager = SequentialComputationsManager()
+    with pytest.raises(TestWorkerException):
+        manager.compute(tasks)
+
+
 def test_compute_on_dataset(spark: SparkSession, dataset: SparkDataset):
     acc = collections.deque()
     tasks = [build_func_on_dataset(acc, i) for i in range(K)]
@@ -138,4 +160,3 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     assert results == list(range(n_folds))
     assert len(unique_thread_ids) == 1
     assert next(iter(unique_thread_ids)) == threading.get_ident()
-

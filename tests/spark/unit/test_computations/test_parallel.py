@@ -20,10 +20,22 @@ K = 20
 manager_configs = list(itertools.product([1, 2, 5], [False, True]))
 
 
+class TestWorkerException(Exception):
+    def __init__(self, id: int):
+        super(TestWorkerException, self).__init__(f"Intentional exception in task {id}")
+
+
 def build_func(acc: collections.deque, seq_id: int):
     def _func() -> int:
         acc.append(threading.get_ident())
         return seq_id
+    return _func
+
+
+def build_func_with_exception(acc: collections.deque, seq_id: int):
+    def _func():
+        acc.append(threading.get_ident())
+        raise TestWorkerException(seq_id)
     return _func
 
 
@@ -45,6 +57,15 @@ def build_fold_func(acc: collections.deque, base_dataset_uid: str, use_location_
         assert slot.dataset.uid != base_dataset_uid
         acc.append(threading.get_ident())
         return fold_id
+    return _func
+
+
+# TODO: PARALLEL - need to add test for exceptions
+
+def build_idx_func(acc: collections.deque):
+    def _func(idx: int) -> int:
+        acc.append(threading.get_ident())
+        return idx
     return _func
 
 
@@ -77,15 +98,6 @@ def test_allocate(spark: SparkSession, dataset: SparkDataset, parallelism: int, 
         assert len(unique_thread_ids) == min(K, parallelism)
 
 
-# TODO: PARALLEL - need to add test for exceptions
-
-def build_idx_func(acc: collections.deque):
-    def _func(idx: int) -> int:
-        acc.append(threading.get_ident())
-        return idx
-    return _func
-
-
 @pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_compute(parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
@@ -97,6 +109,16 @@ def test_compute(parallelism: int, use_location_prefs_mode: bool):
 
     assert results == list(range(K))
     assert len(unique_thread_ids) == min(K, parallelism)
+
+
+@pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
+def test_compute_with_exceptions(spark: SparkSession, parallelism: int, use_location_prefs_mode: bool):
+    acc = collections.deque()
+    tasks = [*(build_func_with_exception(acc, i) for i in range(K, K + 3)), *(build_func(acc, i) for i in range(K))]
+
+    manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
+    with pytest.raises(TestWorkerException):
+        manager.compute(tasks)
 
 
 @pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
