@@ -6,6 +6,8 @@ from multiprocessing.pool import ThreadPool
 from queue import Queue
 from typing import Optional, List, Callable
 
+from pyspark import inheritable_thread_target
+
 from sparklightautoml.computations.base import ComputationsSession, ComputationSlot, T, R, logger, \
     ComputationsManager
 from sparklightautoml.computations.utils import inheritable_thread_target_with_exceptions_catcher, get_executors, \
@@ -45,10 +47,14 @@ class ParallelComputationsSession(ComputationsSession):
 
     @contextmanager
     def allocate(self) -> ComputationSlot:
-        assert self._available_computing_slots_queue is not None, "Cannot allocate slots without session"
-        slot = self._available_computing_slots_queue.get()
-        yield slot
-        self._available_computing_slots_queue.put(slot)
+        slot = None
+        try:
+            assert self._available_computing_slots_queue is not None, "Cannot allocate slots without session"
+            slot = self._available_computing_slots_queue.get()
+            yield slot
+        finally:
+            if slot is not None:
+                self._available_computing_slots_queue.put(slot)
 
     def map_and_compute(self, func: Callable[[R], T], tasks: List[R]) -> List[T]:
         assert self._pool is not None

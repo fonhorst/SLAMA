@@ -27,16 +27,19 @@ def build_func(acc: collections.deque, seq_id: int):
     return _func
 
 
-def build_func_on_dataset(acc: collections.deque, seq_id: int, base_dataset_uid: str):
+def build_func_on_dataset(acc: collections.deque, seq_id: int, base_dataset_uid: str, use_location_prefs_mode: bool):
     def _func(slot: ComputationSlot) -> int:
         assert slot.dataset is not None
-        assert slot.dataset.uid != base_dataset_uid
+        if use_location_prefs_mode:
+            assert slot.dataset.uid != base_dataset_uid
+        else:
+            assert slot.dataset.uid == base_dataset_uid
         acc.append(threading.get_ident())
         return seq_id
     return _func
 
 
-def build_fold_func(acc: collections.deque, base_dataset_uid: str):
+def build_fold_func(acc: collections.deque, base_dataset_uid: str, use_location_prefs_mode: bool):
     def _func(fold_id: int, slot: ComputationSlot) -> int:
         assert slot.dataset is not None
         assert slot.dataset.uid != base_dataset_uid
@@ -44,15 +47,6 @@ def build_fold_func(acc: collections.deque, base_dataset_uid: str):
         return fold_id
     return _func
 
-
-def build_idx_func(acc: collections.deque):
-    def _func(idx: int) -> int:
-        acc.append(threading.get_ident())
-        return idx
-    return _func
-
-
-# TODO: PARALLEL - need to add test for exceptions
 
 @pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_allocate(spark: SparkSession, dataset: SparkDataset, parallelism: int, use_location_prefs_mode: bool):
@@ -83,6 +77,15 @@ def test_allocate(spark: SparkSession, dataset: SparkDataset, parallelism: int, 
         assert len(unique_thread_ids) == min(K, parallelism)
 
 
+# TODO: PARALLEL - need to add test for exceptions
+
+def build_idx_func(acc: collections.deque):
+    def _func(idx: int) -> int:
+        acc.append(threading.get_ident())
+        return idx
+    return _func
+
+
 @pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
 def test_compute(parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
@@ -100,7 +103,7 @@ def test_compute(parallelism: int, use_location_prefs_mode: bool):
 def test_compute_on_dataset(spark: SparkSession, dataset: SparkDataset,
                             parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
-    tasks = [build_func_on_dataset(acc, i, dataset.uid) for i in range(K)]
+    tasks = [build_func_on_dataset(acc, i, dataset.uid, use_location_prefs_mode) for i in range(K)]
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     results = manager.compute_on_dataset(dataset, tasks)
@@ -116,7 +119,7 @@ def test_compute_on_train_val_iter(spark: SparkSession, dataset: SparkDataset,
     n_folds = dataset.num_folds
     acc = collections.deque()
     tv_iter = SparkFoldsIterator(dataset)
-    task = build_fold_func(acc, dataset.uid)
+    task = build_fold_func(acc, dataset.uid, use_location_prefs_mode)
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     results = manager.compute_folds(tv_iter, task)
@@ -129,14 +132,15 @@ def test_compute_on_train_val_iter(spark: SparkSession, dataset: SparkDataset,
 def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     n_folds = dataset.num_folds
     parallelism = 5
+    use_location_prefs_mode = True
     tv_iter = SparkFoldsIterator(dataset)
 
-    manager = ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=True)
+    manager = ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=use_location_prefs_mode)
 
     manager = deepcopy(manager)
 
     acc = collections.deque()
-    task = build_fold_func(acc, dataset.uid)
+    task = build_fold_func(acc, dataset.uid, use_location_prefs_mode)
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 
@@ -146,7 +150,7 @@ def test_deepcopy(spark: SparkSession, dataset: SparkDataset):
     manager = deepcopy(manager)
 
     acc = collections.deque()
-    task = build_fold_func(acc, dataset.uid)
+    task = build_fold_func(acc, dataset.uid, use_location_prefs_mode)
     results = manager.compute_folds(tv_iter, task)
     unique_thread_ids = set(acc)
 

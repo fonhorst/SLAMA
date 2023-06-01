@@ -56,20 +56,20 @@ def test_allocate(spark: SparkSession, dataset: SparkDataset):
                 assert slot.dataset is not None
                 assert slot.dataset.uid == dataset.uid
 
-                acc = collections.deque()
-                results = session.compute([build_func(acc, j) for j in range(K)])
-                unique_thread_ids = set(acc)
+        acc = collections.deque()
+        results = session.compute([build_func(acc, j) for j in range(K)])
+        unique_thread_ids = set(acc)
 
-                assert results == list(range(K))
-                assert len(unique_thread_ids) == 1
-                assert next(iter(unique_thread_ids)) == threading.get_ident()
+        assert results == list(range(K))
+        assert len(unique_thread_ids) == 1
+        assert next(iter(unique_thread_ids)) == threading.get_ident()
 
-                acc = collections.deque()
-                results = session.map_and_compute(build_idx_func(acc), list(range(K)))
-                unique_thread_ids = set(acc)
-                assert results == list(range(K))
-                assert len(unique_thread_ids) == 1
-                assert next(iter(unique_thread_ids)) == threading.get_ident()
+        acc = collections.deque()
+        results = session.map_and_compute(build_idx_func(acc), list(range(K)))
+        unique_thread_ids = set(acc)
+        assert results == list(range(K))
+        assert len(unique_thread_ids) == 1
+        assert next(iter(unique_thread_ids)) == threading.get_ident()
 
 
 def test_compute():
