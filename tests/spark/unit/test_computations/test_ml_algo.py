@@ -1,3 +1,4 @@
+import itertools
 from typing import Optional
 
 import pytest
@@ -10,6 +11,7 @@ from sparklightautoml.computations.sequential import SequentialComputationsManag
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
+from sparklightautoml.ml_algo.linear_pyspark import SparkLinearLBFGS
 from sparklightautoml.validation.iterators import SparkFoldsIterator
 from .. import spark as spark_sess, dataset as spark_dataset
 
@@ -17,34 +19,25 @@ spark = spark_sess
 dataset = spark_dataset
 
 
-@pytest.mark.parametrize("manager,ml_algo", [
-    (None, SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)),
-    (SequentialComputationsManager(), SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)),
-    (
-            ParallelComputationsManager(parallelism=1, use_location_prefs_mode=False),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
-    (
-            ParallelComputationsManager(parallelism=2, use_location_prefs_mode=False),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
-    (
-            ParallelComputationsManager(parallelism=5, use_location_prefs_mode=False),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
-    (
-            ParallelComputationsManager(parallelism=1, use_location_prefs_mode=True),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
-    (
-            ParallelComputationsManager(parallelism=2, use_location_prefs_mode=True),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
-    (
-            ParallelComputationsManager(parallelism=5, use_location_prefs_mode=True),
-            SparkBoostLGBM(use_single_dataset_mode=True, use_barrier_execution_mode=True)
-    ),
-])
+parallel_manager_configs = [
+    ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=use_location_prefs_mode)
+    for parallelism, use_location_prefs_mode  in itertools.product([1, 2, 5], [False, True])
+]
+
+manager_configs = [None, SequentialComputationsManager(), *parallel_manager_configs]
+
+ml_algo_configs = [
+    # lambda: SparkBoostLGBM(use_barrier_execution_mode=True),
+    lambda: SparkLinearLBFGS(default_params={'regParam': [1e-5]})
+]
+
+manager_mlalgo_configs = [
+    (manager, mlalgo_builder())
+    for manager, mlalgo_builder in itertools.product(manager_configs, ml_algo_configs)
+]
+
+
+@pytest.mark.parametrize("manager,ml_algo", manager_mlalgo_configs)
 def test_ml_algo(spark: SparkSession,
                  dataset: SparkDataset,
                  manager: Optional[ComputationsManager],
