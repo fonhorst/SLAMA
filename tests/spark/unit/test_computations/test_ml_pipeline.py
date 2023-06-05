@@ -23,8 +23,6 @@ dataset = spark_dataset
     ParallelComputationsManager(parallelism=5, use_location_prefs_mode=True)
 ])
 def test_ml_pipeline(spark: SparkSession, dataset: SparkDataset, manager: ComputationsManager):
-    # acc
-    # DummyMlAlgo
     iterator = SparkFoldsIterator(dataset)
 
     ml_pipeline = SparkMLPipeline(
