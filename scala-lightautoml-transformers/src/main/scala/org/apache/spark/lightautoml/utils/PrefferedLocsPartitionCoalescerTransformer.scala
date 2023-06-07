@@ -81,6 +81,10 @@ object SomeFunctions {
     df.rdd.barrier().mapPartitions(SomeFunctions.func).count()
   }
 
+  def test_sleep(df: DataFrame, sleep_millis: Int = 5000 ): Array[Row] = {
+    df.rdd.mapPartitions(x => {Thread.sleep(sleep_millis); x}).collect()
+  }
+
   /**
    * Makes numSlots copies of dataset and produce a list of dataframes where each one is a copy of the initial dataset.
    * Every copy is coalesced to a number of executors by setting appropriate Preffered Locations.

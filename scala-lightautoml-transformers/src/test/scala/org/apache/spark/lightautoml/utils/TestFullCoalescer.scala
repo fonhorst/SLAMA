@@ -52,10 +52,16 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
           enforce_division_without_reminder = false
         )
 
+        val durations = new java.util.concurrent.ConcurrentLinkedQueue[Double]()
+
         val computationsThreads = dfs.asScala.map(df =>{
           val thread = new Thread {
             override def run(): Unit = {
-              val df_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
+              val t1 = System.nanoTime
+              val df_elements = SomeFunctions.test_sleep(df.select("data"))
+                      .map(row => row.getAs[Int]("data")).toList
+              val duration = (System.nanoTime - t1) / 1e9d
+              durations.add(duration)
               df_elements should contain theSameElementsAs all_elements
             }
           }
@@ -64,6 +70,10 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
         })
 
         computationsThreads.foreach(_.join())
+
+        durations.size() shouldBe dfs.size()
+        val durs = durations.asScala.toList
+        durs.tail.forall(x => math.abs(x - durs.head) <= 1) shouldBe true
 
         base_rdd.unpersist()
 
