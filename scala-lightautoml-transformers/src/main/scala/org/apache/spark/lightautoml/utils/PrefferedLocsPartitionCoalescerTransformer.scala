@@ -81,7 +81,9 @@ object SomeFunctions {
     df.rdd.barrier().mapPartitions(SomeFunctions.func).count()
   }
 
-  def test_full_coalescer(df: DataFrame, numSlots: Int): (java.util.List[DataFrame], RDD[Row]) = {
+  def test_full_coalescer(df: DataFrame,
+                          numSlots: Int,
+                          materialize_base_rdd: Boolean = true): (java.util.List[DataFrame], RDD[Row]) = {
     // prepare and identify params for slots
     val spark = SparkSession.active
     val master = spark.sparkContext.master
@@ -106,35 +108,39 @@ object SomeFunctions {
     assert(numPartitions % numSlots == 0, "Resulting num partitions should be exactly dividable by num slots")
     assert(numExecs % numSlots == 0, "Resulting num executors should be exactly dividable by num slots")
 
-    val partitionsPerSlot = (numPartitions / numSlots)
+    val partitionsPerSlot = numPartitions / numSlots
     val numExecsPerSlot = numExecs / numSlots
     val prefLocsForSlots = (0 until numSlots)
             .map(slot_id => execs.subList(slot_id * numExecsPerSlot, (slot_id + 1) * numExecsPerSlot).asScala.toList)
 
+    val partition_id_col = "__partition_id"
     // prepare the initial dataset by duplicating its content and assigning partition_id for a specific duplicated rows
     val duplicated_df = df
             .withColumn(
-              "__partition_id",
+              partition_id_col,
               explode(array((0 until numSlots).map(x => lit(x)):_*))
             )
             .withColumn(
-              "__partition_id",
-              col("__partition_id") * lit(partitionsPerSlot)
+              partition_id_col,
+              col(partition_id_col) * lit(partitionsPerSlot)
                       + (lit(partitionsPerSlot) * rand(seed = 42)).cast("int")
             )
 
     // repartition the duplicated dataset to force all desired copies into specific subsets of partitions
     // should work even with standard HashPartitioner
     val new_rdd = new ShuffledRDD[Int, Row, Row](
-      duplicated_df.rdd.map(row => (row.getInt(row.fieldIndex("__partition_id")), row)),
+      duplicated_df.rdd.map(row => (row.getInt(row.fieldIndex(partition_id_col)), row)),
       new TrivialPartitioner(numPartitions)
     ).map(x => x._2)
 
     // not sure if it is needed or not to perform all operation in parallel
-    val copies_rdd = new_rdd.cache()
-    copies_rdd.count()
-    // alternative
-//    val copies_rdd = new_rdd
+    val copies_rdd = if (materialize_base_rdd) {
+      val cached_rdd = new_rdd.cache()
+      cached_rdd.count()
+      cached_rdd
+    } else {
+      new_rdd
+    }
 
     // select subsets of partitions that contains independent copies of the initial dataset
     // assign it preferred locations and convert the resulting rdds into DataFrames

@@ -37,12 +37,12 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterAll with Logging 
               .cache()
       df.write.mode("overwrite").format("noop").save()
 
-      val (dfs, base_rdd) = SomeFunctions.test_full_coalescer(df, 3)
+      val (dfs, base_rdd) = SomeFunctions.test_full_coalescer(df, 3, materialize_base_rdd = false)
 
       dfs.asScala.foreach(df =>{
          df.write.mode("overwrite").format("noop").save()
       })
 
-      val k = 0
+      base_rdd.unpersist()
     }
 }
