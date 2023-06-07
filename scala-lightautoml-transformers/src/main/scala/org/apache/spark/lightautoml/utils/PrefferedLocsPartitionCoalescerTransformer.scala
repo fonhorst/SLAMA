@@ -105,8 +105,10 @@ object SomeFunctions {
 
     val numPartitions = numExecs * foundCoresNum.get
 
-    assert(numPartitions % numSlots == 0, "Resulting num partitions should be exactly dividable by num slots")
-    assert(numExecs % numSlots == 0, "Resulting num executors should be exactly dividable by num slots")
+    assert(numPartitions % numSlots == 0,
+      s"Resulting num partitions should be exactly dividable by num slots: $numPartitions % $numSlots != 0")
+    assert(numExecs % numSlots == 0,
+      s"Resulting num executors should be exactly dividable by num slots: $numExecs % $numSlots != 0")
 
     val partitionsPerSlot = numPartitions / numSlots
     val numExecsPerSlot = numExecs / numSlots
