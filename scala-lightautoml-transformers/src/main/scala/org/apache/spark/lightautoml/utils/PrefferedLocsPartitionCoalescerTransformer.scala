@@ -68,4 +68,8 @@ object SomeFunctions {
               .toList.asJava
     }
   }
+
+  def test_func(df: DataFrame): Long = {
+    df.rdd.barrier().mapPartitions(SomeFunctions.func).count()
+  }
 }
