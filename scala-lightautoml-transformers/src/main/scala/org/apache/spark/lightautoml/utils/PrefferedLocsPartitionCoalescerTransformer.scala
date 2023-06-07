@@ -1,12 +1,12 @@
 package org.apache.spark.lightautoml.utils
 
-import org.apache.spark.{HashPartitioner, Partitioner}
+import org.apache.spark.Partitioner
 import org.apache.spark.ml.Transformer
 import org.apache.spark.ml.param.ParamMap
-import org.apache.spark.rdd.{CoalescedRDD, PartitionPruningRDD, RDD, ShuffledRDD}
-import org.apache.spark.sql.functions.{array, col, explode, lit, rand}
-import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.rdd.{PartitionPruningRDD, RDD, ShuffledRDD}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import scala.collection.JavaConverters._
 
@@ -81,9 +81,15 @@ object SomeFunctions {
     df.rdd.barrier().mapPartitions(SomeFunctions.func).count()
   }
 
-  def test_full_coalescer(df: DataFrame,
-                          numSlots: Int,
-                          materialize_base_rdd: Boolean = true): (java.util.List[DataFrame], RDD[Row]) = {
+  /**
+   * Makes numSlots copies of dataset and produce a list of dataframes where each one is a copy of the initial dataset.
+   * Every copy is coalesced to a number of executors by setting appropriate Preffered Locations.
+   * Subsequent map and aggregate operations should happen only on a subset of executors matched with an output dataframe.
+   * */
+  def duplicateOnNumSlotsWithLocationsPrefferences(df: DataFrame,
+                                                   numSlots: Int,
+                                                   materialize_base_rdd: Boolean = true,
+                                                   enforce_division_without_reminder: Boolean = true): (java.util.List[DataFrame], RDD[Row]) = {
     // prepare and identify params for slots
     val spark = SparkSession.active
     val master = spark.sparkContext.master
@@ -105,10 +111,12 @@ object SomeFunctions {
 
     val numPartitions = numExecs * foundCoresNum.get
 
-    assert(numPartitions % numSlots == 0,
-      s"Resulting num partitions should be exactly dividable by num slots: $numPartitions % $numSlots != 0")
-    assert(numExecs % numSlots == 0,
-      s"Resulting num executors should be exactly dividable by num slots: $numExecs % $numSlots != 0")
+    if (enforce_division_without_reminder) {
+      assert(numPartitions % numSlots == 0,
+        s"Resulting num partitions should be exactly dividable by num slots: $numPartitions % $numSlots != 0")
+      assert(numExecs % numSlots == 0,
+        s"Resulting num executors should be exactly dividable by num slots: $numExecs % $numSlots != 0")
+    }
 
     val partitionsPerSlot = numPartitions / numSlots
     val prefLocsForAllPartitions = execs.asScala.flatMap(e_id => (0 until foundCoresNum.get).map(_ => e_id)).toList

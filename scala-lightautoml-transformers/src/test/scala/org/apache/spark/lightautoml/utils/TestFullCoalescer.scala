@@ -1,6 +1,5 @@
 package org.apache.spark.lightautoml.utils
 
-import org.apache.spark
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.scalatest.BeforeAndAfterEach
@@ -13,17 +12,18 @@ import scala.util.Random
 
 class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging {
   val folds_count = 5
-  val workers_nums = List(3)//List(1, 2, 3, 4, 5)
-  val cores_nums = List(2)//List(1, 2, 3, 4, 5)
-  val wc_nums: List[(Int, Int)] = workers_nums.flatMap(x => cores_nums.map(y => (x, y)))
+  val wcs_nums: List[(Int, Int, Int)] = List(
+    (3, 2, 3),
+    (3, 2, 2)
+  )
 
   override protected def afterEach(): Unit = {
     SparkSession.getActiveSession.foreach(spark=> spark.stop())
   }
 
-  wc_nums.foreach {
-    case (num_workers, num_cores) =>
-      test(s"Coalescers for num_workers=$num_workers and num_cores=$num_cores") {
+  wcs_nums.foreach {
+    case (num_workers, num_cores, num_slots) =>
+      test(s"Coalescers for num_workers=$num_workers, num_cores=$num_cores and num_slots=$num_slots") {
         val spark = SparkSession
                 .builder()
                 .master(s"local-cluster[$num_workers, $num_cores, 1024]")
@@ -45,7 +45,12 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
 
         val all_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
 
-        val (dfs, base_rdd) = SomeFunctions.test_full_coalescer(df, 3, materialize_base_rdd = true)
+        val (dfs, base_rdd) = SomeFunctions.duplicateOnNumSlotsWithLocationsPrefferences(
+          df,
+          num_slots,
+          materialize_base_rdd = true,
+          enforce_division_without_reminder = false
+        )
 
         dfs.asScala.foreach(df =>{
           val df_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
