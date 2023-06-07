@@ -2,10 +2,13 @@ package org.apache.spark.lightautoml.utils
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.sum
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import scala.collection.JavaConverters._
+import org.scalatest.matchers.must.Matchers.contain
+import org.scalatest.matchers.should.Matchers.convertToAnyShouldWrapper
 
+import scala.collection.JavaConverters._
 import scala.util.Random
 
 class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterAll with Logging {
@@ -31,16 +34,19 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterAll with Logging 
       import spark.sqlContext.implicits._
 
       val df = spark
-              .sparkContext.parallelize((0 until 5)
+              .sparkContext.parallelize((0 until 100)
               .map(x => (x, Random.nextInt(folds_count)))).toDF("data", "fold")
               .repartition(num_workers * num_cores * 2)
               .cache()
       df.write.mode("overwrite").format("noop").save()
 
-      val (dfs, base_rdd) = SomeFunctions.test_full_coalescer(df, 3, materialize_base_rdd = false)
+      val all_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
+
+      val (dfs, base_rdd) = SomeFunctions.test_full_coalescer(df, 3, materialize_base_rdd = true)
 
       dfs.asScala.foreach(df =>{
-         df.write.mode("overwrite").format("noop").save()
+        val df_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
+        df_elements should contain theSameElementsAs all_elements
       })
 
       base_rdd.unpersist()
