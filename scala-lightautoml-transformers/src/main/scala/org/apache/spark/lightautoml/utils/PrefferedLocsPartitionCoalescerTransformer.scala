@@ -89,11 +89,17 @@ object SomeFunctions {
    * Makes numSlots copies of dataset and produce a list of dataframes where each one is a copy of the initial dataset.
    * Every copy is coalesced to a number of executors by setting appropriate Preffered Locations.
    * Subsequent map and aggregate operations should happen only on a subset of executors matched with an output dataframe.
+   * Be aware that:
+   *    1. There may be some unused cores if number of cores x number of executors cannot be divided
+   *      by number of slots without remainder
+   *    2. Number of slots will be reduced down to number of cores x number of executors if number of slots is greater
+   *    3. Enabling enforce_division_without_reminder will lead to an exception
+   *      if  number of cores x number of executors cannot be divided by number of slots without remainder
    * */
-  def duplicateOnNumSlotsWithLocationsPrefferences(df: DataFrame,
-                                                   numSlots: Int,
-                                                   materialize_base_rdd: Boolean = true,
-                                                   enforce_division_without_reminder: Boolean = true): (java.util.List[DataFrame], RDD[Row]) = {
+  def duplicateOnNumSlotsWithLocationsPreferences(df: DataFrame,
+                                                  numSlots: Int,
+                                                  materialize_base_rdd: Boolean = true,
+                                                  enforce_division_without_reminder: Boolean = true): (java.util.List[DataFrame], RDD[Row]) = {
     // prepare and identify params for slots
     val spark = SparkSession.active
     val master = spark.sparkContext.master
@@ -122,7 +128,9 @@ object SomeFunctions {
         s"Resulting num executors should be exactly dividable by num slots: $numExecs % $numSlots != 0")
     }
 
-    val partitionsPerSlot = numPartitions / numSlots
+    val realNumSlots = math.min(numSlots, numPartitions)
+
+    val partitionsPerSlot = numPartitions / realNumSlots
     val prefLocsForAllPartitions = execs.asScala.flatMap(e_id => (0 until foundCoresNum.get).map(_ => e_id)).toList
 
     val partition_id_col = "__partition_id"
@@ -130,7 +138,7 @@ object SomeFunctions {
     val duplicated_df = df
             .withColumn(
               partition_id_col,
-              explode(array((0 until numSlots).map(x => lit(x)):_*))
+              explode(array((0 until realNumSlots).map(x => lit(x)):_*))
             )
             .withColumn(
               partition_id_col,
@@ -160,9 +168,9 @@ object SomeFunctions {
 
     // select subsets of partitions that contains independent copies of the initial dataset
     // assign it preferred locations and convert the resulting rdds into DataFrames
-    val prefLocsDfs = (0 until numSlots)
+    val prefLocsDfs = (0 until realNumSlots)
             .map (slotId => new PartitionPruningRDD(copies_rdd, x => x / partitionsPerSlot == slotId))
-            .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema).drop("__partition_id"))
+            .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema).drop(partition_id_col))
             .toList
             .asJava
 

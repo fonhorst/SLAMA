@@ -12,9 +12,14 @@ import scala.util.Random
 
 class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging {
   val folds_count = 5
+  // workers_num, cores_num, slots_num, real_number_of_slots
   val wcs_nums: List[(Int, Int, Int)] = List(
     (3, 2, 3),
-    (3, 2, 2)
+    (3, 2, 2),
+    (5, 2, 3),
+    (5, 1, 6),
+    (1, 3, 3),
+    (1, 1, 3)
   )
 
   override protected def afterEach(): Unit = {
@@ -23,7 +28,7 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
 
   wcs_nums.foreach {
     case (num_workers, num_cores, num_slots) =>
-      test(s"Coalescers for num_workers=$num_workers, num_cores=$num_cores and num_slots=$num_slots") {
+      test(s"Coalescers for num_workers=$num_workers, num_cores=$num_cores, num_slots=$num_slots") {
         val spark = SparkSession
                 .builder()
                 .master(s"local-cluster[$num_workers, $num_cores, 1024]")
@@ -45,12 +50,14 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
 
         val all_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
 
-        val (dfs, base_rdd) = SomeFunctions.duplicateOnNumSlotsWithLocationsPrefferences(
+        val (dfs, base_rdd) = SomeFunctions.duplicateOnNumSlotsWithLocationsPreferences(
           df,
           num_slots,
           materialize_base_rdd = true,
           enforce_division_without_reminder = false
         )
+
+        dfs.size() shouldBe Math.min(num_workers * num_cores, num_slots)
 
         val durations = new java.util.concurrent.ConcurrentLinkedQueue[Double]()
 
