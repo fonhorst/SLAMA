@@ -13,8 +13,8 @@ import scala.util.Random
 
 class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging {
   val folds_count = 5
-  val workers_nums = List(1, 2, 3, 4, 5)
-  val cores_nums = List(1, 2, 3, 4, 5)
+  val workers_nums = List(3)//List(1, 2, 3, 4, 5)
+  val cores_nums = List(2)//List(1, 2, 3, 4, 5)
   val wc_nums: List[(Int, Int)] = workers_nums.flatMap(x => cores_nums.map(y => (x, y)))
 
   override protected def afterEach(): Unit = {

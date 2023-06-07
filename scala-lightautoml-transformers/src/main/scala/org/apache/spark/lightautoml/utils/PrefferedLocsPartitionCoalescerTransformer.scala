@@ -111,9 +111,7 @@ object SomeFunctions {
       s"Resulting num executors should be exactly dividable by num slots: $numExecs % $numSlots != 0")
 
     val partitionsPerSlot = numPartitions / numSlots
-    val numExecsPerSlot = numExecs / numSlots
-    val prefLocsForSlots = (0 until numSlots)
-            .map(slot_id => execs.subList(slot_id * numExecsPerSlot, (slot_id + 1) * numExecsPerSlot).asScala.toList)
+    val prefLocsForAllPartitions = execs.asScala.flatMap(e_id => (0 until foundCoresNum.get).map(_ => e_id)).toList
 
     val partition_id_col = "__partition_id"
     // prepare the initial dataset by duplicating its content and assigning partition_id for a specific duplicated rows
@@ -133,7 +131,11 @@ object SomeFunctions {
     val new_rdd = new ShuffledRDD[Int, Row, Row](
       duplicated_df.rdd.map(row => (row.getInt(row.fieldIndex(partition_id_col)), row)),
       new TrivialPartitioner(numPartitions)
-    ).map(x => x._2)
+    ).map(x => x._2).coalesce(
+      numPartitions,
+      shuffle = false,
+      partitionCoalescer = Some(new PrefferedLocsPartitionCoalescer(prefLocsForAllPartitions))
+    )
 
     // not sure if it is needed or not to perform all operation in parallel
     val copies_rdd = if (materialize_base_rdd) {
@@ -146,15 +148,8 @@ object SomeFunctions {
 
     // select subsets of partitions that contains independent copies of the initial dataset
     // assign it preferred locations and convert the resulting rdds into DataFrames
-    val prefLocsDfs = (0 until numSlots).zip(prefLocsForSlots)
-            .map {
-              case (slotId, prefLocs) =>
-                new PartitionPruningRDD(copies_rdd, x => x / partitionsPerSlot == slotId).coalesce(
-                  numPartitions = partitionsPerSlot,
-                  shuffle = false,
-                  partitionCoalescer = Some(new PrefferedLocsPartitionCoalescer(prefLocs))
-                )
-            }
+    val prefLocsDfs = (0 until numSlots)
+            .map (slotId => new PartitionPruningRDD(copies_rdd, x => x / partitionsPerSlot == slotId))
             .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema).drop("__partition_id"))
             .toList
             .asJava
