@@ -3,9 +3,10 @@ import multiprocessing
 from copy import deepcopy
 from typing import List
 
-from pyspark import SparkContext, inheritable_thread_target
+from pyspark import SparkContext, inheritable_thread_target, RDD
 from pyspark.sql import SparkSession
 
+from sparklightautoml.utils import SparkDataFrame
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,22 @@ def get_executors_cores() -> int:
         cores = int(SparkSession.getActiveSession().conf.get("spark.executor.cores", "1"))
 
     return cores
+
+
+def duplicate_on_num_slots_with_locations_preferences(
+        df: SparkDataFrame,
+        num_slots: int,
+        materialize_base_rdd: bool = True,
+        enforce_division_without_reminder: bool = True):
+    # noinspection PyUnresolvedReferences
+    spark = SparkSession.getActiveSession()
+    sc = SparkContext._active_spark_context
+    result = sc._jvm.org.apache.spark.lightautoml.utils.SomeFunctions.duplicateOnNumSlotsWithLocationsPreferences(
+        df._jdf, num_slots, materialize_base_rdd, enforce_division_without_reminder
+    )
+    dfs = [SparkDataFrame(jobj, spark._wrapped) for jobj in result._1()]
+    rdd = RDD(result._2(), sc)
+    return dfs, rdd
 
 
 def inheritable_thread_target_with_exceptions_catcher(f):

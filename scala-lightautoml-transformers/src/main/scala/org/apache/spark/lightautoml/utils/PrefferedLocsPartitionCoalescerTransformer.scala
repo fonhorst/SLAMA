@@ -1,6 +1,7 @@
 package org.apache.spark.lightautoml.utils
 
 import org.apache.spark.Partitioner
+import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.ml.Transformer
 import org.apache.spark.ml.param.ParamMap
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD, ShuffledRDD}
@@ -99,7 +100,8 @@ object SomeFunctions {
   def duplicateOnNumSlotsWithLocationsPreferences(df: DataFrame,
                                                   numSlots: Int,
                                                   materialize_base_rdd: Boolean = true,
-                                                  enforce_division_without_reminder: Boolean = true): (java.util.List[DataFrame], RDD[Row]) = {
+                                                  enforce_division_without_reminder: Boolean = true):
+  (java.util.List[DataFrame], JavaRDD[Row]) = {
     // prepare and identify params for slots
     val spark = SparkSession.active
     val master = spark.sparkContext.master
@@ -174,6 +176,6 @@ object SomeFunctions {
             .toList
             .asJava
 
-    (prefLocsDfs, copies_rdd)
+    (prefLocsDfs, copies_rdd.toJavaRDD())
   }
 }
