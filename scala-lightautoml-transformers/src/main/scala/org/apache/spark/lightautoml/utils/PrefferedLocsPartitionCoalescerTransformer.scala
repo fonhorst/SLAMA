@@ -1,9 +1,13 @@
 package org.apache.spark.lightautoml.utils
 
+import org.apache.spark.{HashPartitioner, Partitioner}
 import org.apache.spark.ml.Transformer
 import org.apache.spark.ml.param.ParamMap
+import org.apache.spark.rdd.{CoalescedRDD, ShuffledRDD}
+import org.apache.spark.sql.functions.{array, col, explode, lit, rand}
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.StructType
+
 import scala.collection.JavaConverters._
 
 class PrefferedLocsPartitionCoalescerTransformer(override val uid: String,
@@ -49,6 +53,10 @@ class PrefferedLocsPartitionCoalescerTransformer(override val uid: String,
   override def transformSchema(schema: StructType): StructType = schema.copy()
 }
 
+class TrivialPartitioner(override val numPartitions: Int) extends Partitioner {
+  override def getPartition(key: Any): Int = key.asInstanceOf[Int]
+}
+
 
 object SomeFunctions {
   def func[T](x: T): T = x
@@ -71,5 +79,45 @@ object SomeFunctions {
 
   def test_func(df: DataFrame): Long = {
     df.rdd.barrier().mapPartitions(SomeFunctions.func).count()
+  }
+
+  def test_full_coalescer(df: DataFrame, numSlots: Int): DataFrame = {
+    val spark = SparkSession.active
+    val master = spark.sparkContext.master
+    val numExecs = SomeFunctions.executors().size()
+
+    val foundCoresNum = spark.conf.getOption("spark.executor.cores") match {
+      case Some(cores_option) => Some(cores_option.toInt)
+      case None => if (master.startsWith("local-cluster")){
+        val cores = master.slice("local-cluster[".length, master.length - 1).split(',')(1).trim.toInt
+        Some(cores)
+      } else if (master.startsWith("local")) {
+        val num_cores = master.slice("local[".length, master.length - 1)
+        val cores = if (num_cores == "*") { java.lang.Runtime.getRuntime.availableProcessors } else { num_cores.toInt }
+        Some(cores)
+      } else {
+        None
+      }
+    }
+
+    val numPartitions = numExecs * foundCoresNum.get
+    val partitionsPerSlot = (numPartitions / numSlots).toInt
+
+    val duplicated_df = df
+            .withColumn(
+              "__partition_id",
+              explode(array((0 until numSlots).map(x => lit(x)):_*)) * lit(partitionsPerSlot)
+                      + (lit(partitionsPerSlot) * rand(seed = 42)).cast("int")
+            )
+
+    // should work even with standard HashPartitioner
+
+    val new_rdd = new ShuffledRDD[Int, Row, Row](
+      duplicated_df.rdd.map(row => (row.getInt(row.fieldIndex("__partition_id")), row)),
+      new TrivialPartitioner(numPartitions)
+    ).map(x => x._2)
+
+    val new_df = spark.createDataFrame(new_rdd, schema = duplicated_df.schema)
+    new_df
   }
 }
