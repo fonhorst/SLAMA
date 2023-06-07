@@ -115,7 +115,11 @@ object SomeFunctions {
     val duplicated_df = df
             .withColumn(
               "__partition_id",
-              explode(array((0 until numSlots).map(x => lit(x)):_*)) * lit(partitionsPerSlot)
+              explode(array((0 until numSlots).map(x => lit(x)):_*))
+            )
+            .withColumn(
+              "__partition_id",
+              col("__partition_id") * lit(partitionsPerSlot)
                       + (lit(partitionsPerSlot) * rand(seed = 42)).cast("int")
             )
 
@@ -137,13 +141,13 @@ object SomeFunctions {
     val prefLocsDfs = (0 until numSlots).zip(prefLocsForSlots)
             .map {
               case (slotId, prefLocs) =>
-                new PartitionPruningRDD(copies_rdd, x => x % partitionsPerSlot == slotId).coalesce(
+                new PartitionPruningRDD(copies_rdd, x => x / partitionsPerSlot == slotId).coalesce(
                   numPartitions = partitionsPerSlot,
                   shuffle = false,
                   partitionCoalescer = Some(new PrefferedLocsPartitionCoalescer(prefLocs))
                 )
             }
-            .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema))
+            .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema).drop("__partition_id"))
             .toList
             .asJava
 
