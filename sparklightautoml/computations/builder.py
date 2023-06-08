@@ -59,7 +59,7 @@ def build_named_parallelism_settings(config_name: str, parallelism: int):
                 "use_location_prefs_mode": False
             }
         },
-        "intra_mlpipe_parallelism_with_location_pres_mode": {
+        "intra_mlpipe_parallelism_with_location_prefs_mode": {
             "ml_pipelines": {"parallelism": 1},
             "ml_algos": {"parallelism": 1},
             "selector": {"parallelism": parallelism},
