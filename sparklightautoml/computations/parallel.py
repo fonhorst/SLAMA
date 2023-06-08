@@ -5,10 +5,12 @@ from multiprocessing.pool import ThreadPool
 from queue import Queue
 from typing import Optional, List, Callable
 
+from pyspark import RDD
+
 from sparklightautoml.computations.base import ComputationsSession, ComputationSlot, T, R, logger, \
     ComputationsManager
 from sparklightautoml.computations.utils import inheritable_thread_target_with_exceptions_catcher, get_executors, \
-    get_executors_cores
+    get_executors_cores, duplicate_on_num_slots_with_locations_preferences
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.transformers.scala_wrappers.preffered_locs_partition_coalescer import \
     PrefferedLocsPartitionCoalescerTransformer
@@ -23,6 +25,7 @@ class ParallelComputationsSession(ComputationsSession):
         self._computing_slots: Optional[List[ComputationSlot]] = None
         self._available_computing_slots_queue: Optional[Queue] = None
         self._pool: Optional[ThreadPool] = None
+        self._pref_locs_java_rdd: Optional[RDD] = None
 
     def __enter__(self):
         self._pool = ThreadPool(processes=self._parallelism)
@@ -40,6 +43,8 @@ class ParallelComputationsSession(ComputationsSession):
             for cslot in self._computing_slots:
                 if cslot.dataset is not None:
                     cslot.dataset.unpersist()
+        if self._pref_locs_java_rdd is not None:
+            self._pref_locs_java_rdd.unpersist()
 
     @contextmanager
     def allocate(self) -> ComputationSlot:
@@ -83,44 +88,62 @@ class ParallelComputationsSession(ComputationsSession):
                        "there should noy be any parallel computations from "
                        "different entities (other MLPipes, MLAlgo, etc).")
 
-        # TODO: PARALLEL - improve function to work with uneven number of executors
         execs = get_executors()
         exec_cores = get_executors_cores()
-        execs_per_slot = max(1, math.floor(len(execs) / self._parallelism))
-        slots_num = int(len(execs) / execs_per_slot)
-        num_tasks = execs_per_slot * exec_cores
-        num_threads_per_executor = max(exec_cores - 1, 1)
 
-        if len(execs) % self._parallelism != 0:
-            warnings.warn(f"Uneven number of executors per job. "
-                          f"Setting execs per slot: {execs_per_slot}, slots num: {slots_num}.")
+        if math.floor(len(execs) / self._parallelism) > 0 and len(execs) % self._parallelism != 0:
+            warnings.warn(
+                f"Uneven number of executors per job (one job uses multiple executors): "
+                f"{len(execs)} / {self._parallelism}. "
+                f"Number of allocated slots may be reduced."
+            )
 
-        logger.info(f"Coalescing dataset into multiple copies (num copies: {slots_num}) "
+        if math.floor(len(execs) / self._parallelism) == 0 and exec_cores % self._parallelism != 0:
+            warnings.warn(
+                f"Uneven number of jobs per executor (one job uses only a part of a single executor): "
+                f"{exec_cores} / {self._parallelism}. "
+                f"Number of allocated slots may be reduced."
+            )
+
+        logger.info(f"Coalescing dataset into multiple copies (num copies: {self._parallelism}) "
                     f"with specified preffered locations")
 
+        dfs, self._pref_locs_java_rdd = duplicate_on_num_slots_with_locations_preferences(
+            df=dataset.data,
+            num_slots=self._parallelism,
+            enforce_division_without_reminder=False
+        )
+
+        assert len(dfs) > 0, "Not dataframe slots are prepared, cannot continue"
+
+        if len(dfs) != self._parallelism:
+            logger.warning(f"Impossible to allocate desired number of slots, "
+                           f"probably due to lack of resources: {len(dfs)} < {self._parallelism}")
+
+        # checking all dataframes have the same number of partitions
+        unique_num_partitions = set(df.rdd.getNumPartitions() for df in dfs)
+        assert len(unique_num_partitions) == 1 and unique_num_partitions.pop() > 0
+
+        num_tasks = dfs[0].rdd.getNumPartitions()
+        num_threads_per_executor = min(num_tasks, exec_cores)
+
+        logger.info(f"Continuing with {len(dfs)} prepared slots.")
+
         dataset_slots = []
-
-        # TODO: PARALLEL - may be executed in parallel
-        # TODO: PARALLEL - it might be optimized on Scala level and squashed into a single operation
-        for i in range(slots_num):
-            pref_locs = execs[i * execs_per_slot: (i + 1) * execs_per_slot]
-
-            coalesced_data = PrefferedLocsPartitionCoalescerTransformer(pref_locs=pref_locs) \
-                .transform(dataset.data).cache()
-            coalesced_data.write.mode('overwrite').format('noop').save()
-
+        for i, coalesced_df in enumerate(dfs):
             coalesced_dataset = dataset.empty()
-            coalesced_dataset.set_data(coalesced_data, dataset.features, dataset.roles,
+            coalesced_dataset.set_data(coalesced_df, dataset.features, dataset.roles,
                                        name=f"CoalescedForPrefLocs_{dataset.name}")
 
-            dataset_slots.append(ComputationSlot(
-                id=f"{i}",
-                dataset=coalesced_dataset,
-                num_tasks=num_tasks,
-                num_threads_per_executor=num_threads_per_executor
-            ))
-
-            logger.debug(f"Preffered locations for slot #{i}: {pref_locs}")
+            # TODO: PARALLEL - add preffered locations logging
+            dataset_slots.append(
+                ComputationSlot(
+                    id=f"{i}",
+                    dataset=coalesced_dataset,
+                    num_tasks=num_tasks,
+                    num_threads_per_executor=num_threads_per_executor
+                )
+            )
 
         return dataset_slots
 
