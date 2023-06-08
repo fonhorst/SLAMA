@@ -50,10 +50,9 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
 
         val all_elements = df.select("data").collect().map(row => row.getAs[Int]("data")).toList
 
-        val (dfs, base_rdd) = SomeFunctions.duplicateOnNumSlotsWithLocationsPreferences(
+        val (dfs, base_pref_located_df) = SomeFunctions.duplicateOnNumSlotsWithLocationsPreferences(
           df,
           num_slots,
-          materialize_base_rdd = true,
           enforce_division_without_reminder = false
         )
 
@@ -82,7 +81,7 @@ class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging
         val durs = durations.asScala.toList
         durs.tail.forall(x => math.abs(x - durs.head) <= 1) shouldBe true
 
-        base_rdd.unpersist()
+        base_pref_located_df.unpersist()
 
         spark.stop()
       }

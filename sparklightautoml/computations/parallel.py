@@ -14,6 +14,7 @@ from sparklightautoml.computations.utils import inheritable_thread_target_with_e
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.transformers.scala_wrappers.preffered_locs_partition_coalescer import \
     PrefferedLocsPartitionCoalescerTransformer
+from sparklightautoml.utils import SparkDataFrame
 
 
 class ParallelComputationsSession(ComputationsSession):
@@ -25,7 +26,7 @@ class ParallelComputationsSession(ComputationsSession):
         self._computing_slots: Optional[List[ComputationSlot]] = None
         self._available_computing_slots_queue: Optional[Queue] = None
         self._pool: Optional[ThreadPool] = None
-        self._pref_locs_java_rdd: Optional[RDD] = None
+        self._base_pref_locs_df: Optional[SparkDataFrame] = None
 
     def __enter__(self):
         self._pool = ThreadPool(processes=self._parallelism)
@@ -43,8 +44,8 @@ class ParallelComputationsSession(ComputationsSession):
             for cslot in self._computing_slots:
                 if cslot.dataset is not None:
                     cslot.dataset.unpersist()
-        if self._pref_locs_java_rdd is not None:
-            self._pref_locs_java_rdd.unpersist()
+        if self._base_pref_locs_df is not None:
+            self._base_pref_locs_df.unpersist()
 
     @contextmanager
     def allocate(self) -> ComputationSlot:
@@ -108,7 +109,7 @@ class ParallelComputationsSession(ComputationsSession):
         logger.info(f"Coalescing dataset into multiple copies (num copies: {self._parallelism}) "
                     f"with specified preffered locations")
 
-        dfs, self._pref_locs_java_rdd = duplicate_on_num_slots_with_locations_preferences(
+        dfs, self._base_pref_locs_df = duplicate_on_num_slots_with_locations_preferences(
             df=dataset.data,
             num_slots=self._parallelism,
             enforce_division_without_reminder=False

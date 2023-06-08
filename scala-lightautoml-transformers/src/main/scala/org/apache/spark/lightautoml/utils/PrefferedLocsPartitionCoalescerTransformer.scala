@@ -1,10 +1,9 @@
 package org.apache.spark.lightautoml.utils
 
 import org.apache.spark.Partitioner
-import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.ml.Transformer
 import org.apache.spark.ml.param.ParamMap
-import org.apache.spark.rdd.{PartitionPruningRDD, RDD, ShuffledRDD}
+import org.apache.spark.rdd.{PartitionPruningRDD, ShuffledRDD}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
@@ -101,7 +100,7 @@ object SomeFunctions {
                                                   numSlots: Int,
                                                   materialize_base_rdd: Boolean = true,
                                                   enforce_division_without_reminder: Boolean = true):
-  (java.util.List[DataFrame], JavaRDD[Row]) = {
+  (java.util.List[DataFrame], DataFrame) = {
     // prepare and identify params for slots
     val spark = SparkSession.active
     val master = spark.sparkContext.master
@@ -150,32 +149,34 @@ object SomeFunctions {
 
     // repartition the duplicated dataset to force all desired copies into specific subsets of partitions
     // should work even with standard HashPartitioner
-    val new_rdd = new ShuffledRDD[Int, Row, Row](
+    val new_rdd_2 = new ShuffledRDD[Int, Row, Row](
       duplicated_df.rdd.map(row => (row.getInt(row.fieldIndex(partition_id_col)), row)),
       new TrivialPartitioner(numPartitions)
-    ).map(x => x._2).coalesce(
+    ).map(x => x._2)
+
+    val new_rdd_df = spark.createDataFrame(new_rdd_2.coalesce(
       numPartitions,
       shuffle = false,
       partitionCoalescer = Some(new PrefferedLocsPartitionCoalescer(prefLocsForAllPartitions))
-    )
+    ), duplicated_df.schema).cache()
 
     // not sure if it is needed or not to perform all operation in parallel
-    val copies_rdd = if (materialize_base_rdd) {
-      val cached_rdd = new_rdd.cache()
-      cached_rdd.count()
-      cached_rdd
+    val copies_rdd_df = if (materialize_base_rdd) {
+      val cached_rdd_df = new_rdd_df.cache()
+      cached_rdd_df.write.mode("overwrite").format("noop").save()
+      cached_rdd_df
     } else {
-      new_rdd
+      new_rdd_df
     }
 
     // select subsets of partitions that contains independent copies of the initial dataset
     // assign it preferred locations and convert the resulting rdds into DataFrames
     val prefLocsDfs = (0 until realNumSlots)
-            .map (slotId => new PartitionPruningRDD(copies_rdd, x => x / partitionsPerSlot == slotId))
+            .map (slotId => new PartitionPruningRDD(copies_rdd_df.rdd, x => x / partitionsPerSlot == slotId))
             .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema).drop(partition_id_col))
             .toList
             .asJava
 
-    (prefLocsDfs, copies_rdd.toJavaRDD())
+    (prefLocsDfs, copies_rdd_df)
   }
 }

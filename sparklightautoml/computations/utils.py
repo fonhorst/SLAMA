@@ -44,8 +44,8 @@ def duplicate_on_num_slots_with_locations_preferences(
         df._jdf, num_slots, materialize_base_rdd, enforce_division_without_reminder
     )
     dfs = [SparkDataFrame(jobj, spark._wrapped) for jobj in result._1()]
-    rdd = RDD(result._2(), sc)
-    return dfs, rdd
+    base_coalesced_df = SparkDataFrame(result._2(), spark._wrapped)
+    return dfs, base_coalesced_df
 
 
 def inheritable_thread_target_with_exceptions_catcher(f):
