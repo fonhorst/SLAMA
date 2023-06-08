@@ -29,8 +29,7 @@ def main(spark: SparkSession, dataset_name: str, seed: int):
     # 2. use_algos = [["lgb_tuned"]]
     # 3. use_algos = [["linear_l2"]]
     # 4. use_algos = [["lgb", "linear_l2"], ["lgb"]]
-    # use_algos = [["lgb", "linear_l2"], ["lgb"]]
-    use_algos = [["lgb"]]
+    use_algos = [["lgb", "linear_l2"], ["lgb"]]
     cv = 3
     dataset = get_dataset(dataset_name)
 
@@ -57,7 +56,7 @@ def main(spark: SparkSession, dataset_name: str, seed: int):
             },
             linear_l2_params={'default_params': {'regParam': [1e-5]}},
             reader_params={"cv": cv, "advanced_roles": False},
-            computation_settings=("intra_mlpipe_parallelism_with_location_prefs_mode", 3)
+            computation_settings=("parallelism", 3)
         )
 
         oof_predictions = automl.fit_predict(
@@ -105,33 +104,33 @@ def main(spark: SparkSession, dataset_name: str, seed: int):
         ))
 
         logger.info(f"score for test predictions: {test_metric_value}")
-    #
-    # base_path = "/tmp/spark_results"
-    # automl_model_path = os.path.join(base_path, "automl_pipeline")
-    # os.makedirs(base_path, exist_ok=True)
-    #
-    # with log_exec_timer("saving model") as saving_timer:
-    #     transformer.write().overwrite().save(automl_model_path)
-    #
-    # with log_exec_timer("Loading model time") as loading_timer:
-    #     pipeline_model = PipelineModel.load(automl_model_path)
-    #
-    # with log_exec_timer("spark-lama predicting on test (#3 way)"):
-    #     te_pred = pipeline_model.transform(test_data_dropped)
-    #
-    #     check_columns(test_data_dropped, te_pred)
-    #
-    #     pred_column = next(c for c in te_pred.columns if c.startswith('prediction'))
-    #     score = task.get_dataset_metric()
-    #     test_metric_value = score(te_pred.select(
-    #         SparkDataset.ID_COLUMN,
-    #         sf.col(dataset.roles['target']).alias('target'),
-    #         sf.col(pred_column).alias('prediction')
-    #     ))
-    #
-    # logger.info(f"score for test predictions via loaded pipeline: {test_metric_value}")
-    #
-    # logger.info("Predicting is finished")
+
+    base_path = "/tmp/spark_results"
+    automl_model_path = os.path.join(base_path, "automl_pipeline")
+    os.makedirs(base_path, exist_ok=True)
+
+    with log_exec_timer("saving model") as saving_timer:
+        transformer.write().overwrite().save(automl_model_path)
+
+    with log_exec_timer("Loading model time") as loading_timer:
+        pipeline_model = PipelineModel.load(automl_model_path)
+
+    with log_exec_timer("spark-lama predicting on test (#3 way)"):
+        te_pred = pipeline_model.transform(test_data_dropped)
+
+        check_columns(test_data_dropped, te_pred)
+
+        pred_column = next(c for c in te_pred.columns if c.startswith('prediction'))
+        score = task.get_dataset_metric()
+        test_metric_value = score(te_pred.select(
+            SparkDataset.ID_COLUMN,
+            sf.col(dataset.roles['target']).alias('target'),
+            sf.col(pred_column).alias('prediction')
+        ))
+
+    logger.info(f"score for test predictions via loaded pipeline: {test_metric_value}")
+
+    logger.info("Predicting is finished")
 
     result = {
         "seed": seed,
@@ -141,8 +140,8 @@ def main(spark: SparkSession, dataset_name: str, seed: int):
         "test_metric_value": test_metric_value,
         "train_duration_secs": train_timer.duration,
         "predict_duration_secs": predict_timer.duration,
-        # "saving_duration_secs": saving_timer.duration,
-        # "loading_duration_secs": loading_timer.duration
+        "saving_duration_secs": saving_timer.duration,
+        "loading_duration_secs": loading_timer.duration
     }
 
     print(f"EXP-RESULT: {result}")

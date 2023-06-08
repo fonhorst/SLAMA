@@ -78,12 +78,34 @@ class ParallelComputationsSession(ComputationsSession):
 
     def _make_computing_slots(self, dataset: Optional[SparkDataset]) -> List[ComputationSlot]:
         if dataset is not None and self._use_location_prefs_mode:
-            computing_slots = self._coalesced_dataset_copies_into_preffered_locations(dataset)
+            computing_slots = self._make_slots_on_dataset_copies_coalesced_into_preffered_locations(dataset)
+        elif dataset is not None:
+            computing_slots = self._make_slots_with_current_dataset(dataset)
         else:
-            computing_slots = [ComputationSlot(f"i", dataset) for i in range(self._parallelism)]
+            computing_slots = [ComputationSlot(f"{i}") for i in range(self._parallelism)]
+
         return computing_slots
 
-    def _coalesced_dataset_copies_into_preffered_locations(self, dataset: SparkDataset) \
+    def _make_slots_with_current_dataset(self, dataset: SparkDataset) -> List[ComputationSlot]:
+        execs = get_executors()
+        exec_cores = get_executors_cores()
+
+        num_tasks = max(1, math.floor(len(execs) * exec_cores / self._parallelism))
+        num_threads_per_executor = round(num_tasks / len(execs))
+
+        computing_slots = [
+            ComputationSlot(
+                f"{i}",
+                dataset,
+                num_tasks=num_tasks,
+                num_threads_per_executor=num_threads_per_executor
+            )
+            for i in range(self._parallelism)
+        ]
+
+        return computing_slots
+
+    def _make_slots_on_dataset_copies_coalesced_into_preffered_locations(self, dataset: SparkDataset) \
             -> List[ComputationSlot]:
         logger.warning("Be aware for correct functioning slot-based computations "
                        "there should noy be any parallel computations from "
