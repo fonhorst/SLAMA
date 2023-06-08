@@ -3,6 +3,7 @@ from logging import config
 from typing import Tuple, Union, Callable
 
 import optuna
+from lightautoml.ml_algo.tuning.base import DefaultTuner
 from lightautoml.ml_algo.tuning.optuna import TunableAlgo
 from lightautoml.ml_algo.utils import tune_and_fit_predict
 from pyspark.sql import functions as sf
@@ -72,12 +73,14 @@ if __name__ == "__main__":
     # create main entities
     computations_manager = ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=True)
     iterator = SparkFoldsIterator(train_ds).convert_to_holdout_iterator()
-    tuner = ProgressReportingOptunaTuner(
-        n_trials=10,
-        timeout=300,
-        parallelism=parallelism,
-        computations_manager=computations_manager
-    )
+    # tuner = ProgressReportingOptunaTuner(
+    #     n_trials=10,
+    #     timeout=300,
+    #     parallelism=parallelism,
+    #     computations_manager=computations_manager
+    # )
+    tuner = DefaultTuner()
+
     ml_algo = SparkBoostLGBM(default_params={"numIterations": 500}, computations_settings=computations_manager)
     score = ds.task.get_dataset_metric()
 
