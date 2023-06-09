@@ -158,7 +158,7 @@ object SomeFunctions {
       numPartitions,
       shuffle = false,
       partitionCoalescer = Some(new PrefferedLocsPartitionCoalescer(prefLocsForAllPartitions))
-    ), duplicated_df.schema).cache()
+    ), duplicated_df.schema)
 
     // not sure if it is needed or not to perform all operation in parallel
     val copies_rdd_df = if (materialize_base_rdd) {
@@ -173,7 +173,10 @@ object SomeFunctions {
     // assign it preferred locations and convert the resulting rdds into DataFrames
     val prefLocsDfs = (0 until realNumSlots)
             .map (slotId => new PartitionPruningRDD(copies_rdd_df.rdd, x => x / partitionsPerSlot == slotId))
-            .map(rdd => spark.createDataFrame(rdd, schema = duplicated_df.schema).drop(partition_id_col))
+            .map {
+              rdd =>
+                spark.createDataFrame(rdd, schema = duplicated_df.schema).drop(partition_id_col).localCheckpoint(true)
+            }
             .toList
             .asJava
 

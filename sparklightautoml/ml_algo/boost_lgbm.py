@@ -432,6 +432,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
             validationIndicatorCol=validation_column,
             verbosity=verbose_eval,
             useSingleDatasetMode=self._use_single_dataset_mode,
+            useBarrierExecutionMode=self._use_barrier_execution_mode,
             isProvideTrainingMetric=True,
             chunkSize=self._chunk_size,
         )
@@ -502,7 +503,8 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
                            f"Reducing its size down according to max_validation_size setting:"
                            f" {self._max_validation_size}")
             full_data = full_data.where(
-                ~sf.col(validation_column) or sf.rand(seed=self._seed) < self._max_validation_size / val_data_size
+                (sf.col(validation_column) != sf.lit(1)) |
+                (sf.rand(seed=self._seed) < sf.lit(self._max_validation_size / val_data_size))
             )
         return full_data
 
