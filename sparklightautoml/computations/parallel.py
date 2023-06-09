@@ -14,7 +14,7 @@ from sparklightautoml.computations.utils import inheritable_thread_target_with_e
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.transformers.scala_wrappers.preffered_locs_partition_coalescer import \
     PrefferedLocsPartitionCoalescerTransformer
-from sparklightautoml.utils import SparkDataFrame
+from sparklightautoml.utils import SparkDataFrame, get_current_session
 
 
 class ParallelComputationsSession(ComputationsSession):
@@ -29,6 +29,9 @@ class ParallelComputationsSession(ComputationsSession):
         self._base_pref_locs_df: Optional[SparkDataFrame] = None
 
     def __enter__(self):
+        # spark = get_current_session()
+        # spark.conf.set("spark.default.parallelism", "2")
+
         self._pool = ThreadPool(processes=self._parallelism)
         self._computing_slots = self._make_computing_slots(self._dataset)
         self._available_computing_slots_queue = Queue(maxsize=len(self._computing_slots))

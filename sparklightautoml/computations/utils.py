@@ -43,8 +43,8 @@ def duplicate_on_num_slots_with_locations_preferences(
     result = sc._jvm.org.apache.spark.lightautoml.utils.SomeFunctions.duplicateOnNumSlotsWithLocationsPreferences(
         df._jdf, num_slots, materialize_base_rdd, enforce_division_without_reminder
     )
-    dfs = [SparkDataFrame(jobj, spark._wrapped) for jobj in result._1()]
-    base_coalesced_df = SparkDataFrame(result._2(), spark._wrapped)
+    dfs = [SparkDataFrame(jobj, spark) for jobj in result._1()]
+    base_coalesced_df = SparkDataFrame(result._2(), spark)
     return dfs, base_coalesced_df
 
 

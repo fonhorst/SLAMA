@@ -9,6 +9,7 @@ import org.scalatest.matchers.should.Matchers.convertToAnyShouldWrapper
 
 import scala.collection.JavaConverters._
 import scala.util.Random
+import org.apache.spark.lightautoml.utils.SomeFunctions
 
 class TestFullCoalescer extends AnyFunSuite with BeforeAndAfterEach with Logging {
   val folds_count = 5
