@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from logging import config
 from typing import Tuple, Union, Callable
 
@@ -9,9 +10,12 @@ from pyspark.sql import functions as sf
 
 from examples.spark.examples_utils import get_spark_session
 from sparklightautoml.computations.parallel import ParallelComputationsManager
+from sparklightautoml.computations.utils import deecopy_tviter_without_dataset
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
+from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
+from sparklightautoml.ml_algo.linear_pyspark import SparkLinearLBFGS
 from sparklightautoml.ml_algo.tuning.parallel_optuna import ParallelOptunaTuner
 from sparklightautoml.utils import logging_config, VERBOSE_LOGGING_FORMAT
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator
@@ -28,14 +32,47 @@ class ProgressReportingOptunaTuner(ParallelOptunaTuner):
                        estimated_n_trials: int,
                        train_valid_iterator: SparkBaseTrainValidIterator) \
             -> Callable[[optuna.trial.Trial], Union[float, int]]:
-        obj_func = super()._get_objective(ml_algo, estimated_n_trials, train_valid_iterator)
+        assert isinstance(ml_algo, SparkTabularMLAlgo)
 
-        def func(*args, **kwargs):
-            obj_score = obj_func(*args, **kwargs)
-            logger.info(f"Objective score: {obj_score}")
-            return obj_score
+        def objective(trial: optuna.trial.Trial) -> float:
+            with self._session.allocate() as slot:
+                assert slot.dataset is not None
+                _ml_algo = deepcopy(ml_algo)
+                tv_iter = deecopy_tviter_without_dataset(train_valid_iterator)
+                tv_iter.train = slot.dataset
 
-        return func
+                optimization_search_space = _ml_algo.optimization_search_space
+
+                if not optimization_search_space:
+                    optimization_search_space = _ml_algo._get_default_search_spaces(
+                        suggested_params=_ml_algo.init_params_on_input(tv_iter),
+                        estimated_n_trials=estimated_n_trials,
+                    )
+
+                if callable(optimization_search_space):
+                     params = optimization_search_space(
+                        trial=trial,
+                        optimization_search_space=optimization_search_space,
+                        suggested_params=_ml_algo.init_params_on_input(tv_iter),
+                    )
+                else:
+                    params = self._sample(
+                        trial=trial,
+                        optimization_search_space=optimization_search_space,
+                        suggested_params=_ml_algo.init_params_on_input(tv_iter),
+                    )
+
+                _ml_algo.params = params
+
+                logger.warning(f"Optuna Params: {params}")
+
+                output_dataset = _ml_algo.fit_predict(train_valid_iterator=tv_iter)
+                obj_score = _ml_algo.score(output_dataset)
+
+                logger.info(f"Objective score: {obj_score}")
+                return obj_score
+
+        return objective
 
 
 def train_test_split(dataset: SparkDataset, test_slice_or_fold_num: Union[float, int] = 0.2) \
@@ -58,7 +95,8 @@ def train_test_split(dataset: SparkDataset, test_slice_or_fold_num: Union[float,
 if __name__ == "__main__":
     spark = get_spark_session()
 
-    feat_pipe = "lgb_adv"  # linear, lgb_simple or lgb_adv
+    # feat_pipe = "lgb_adv"  # linear, lgb_simple or lgb_adv
+    feat_pipe = "linear"  # linear, lgb_simple or lgb_adv
     dataset_name = "lama_test_dataset"
     parallelism = 3
 
@@ -78,7 +116,8 @@ if __name__ == "__main__":
         parallelism=parallelism,
         computations_manager=computations_manager
     )
-    ml_algo = SparkBoostLGBM(default_params={"numIterations": 500}, computations_settings=computations_manager)
+    # ml_algo = SparkBoostLGBM(default_params={"numIterations": 500}, computations_settings=computations_manager)
+    ml_algo = SparkLinearLBFGS(default_params={'regParam': [1e-5]}, computations_settings=computations_manager)
     score = ds.task.get_dataset_metric()
 
     # fit and predict
