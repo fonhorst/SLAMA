@@ -1,4 +1,6 @@
 import functools
+import importlib
+import json
 import logging
 import os
 import pickle
@@ -6,11 +8,14 @@ import uuid
 import warnings
 from abc import ABC, abstractmethod
 from collections import Counter
-from copy import copy
+from copy import copy, deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from json import JSONEncoder, JSONDecoder
 from typing import Sequence, Any, Tuple, Union, Optional, List, cast, Dict, Set, Callable
 
+import numpy as np
 import pandas as pd
 from lightautoml.dataset.base import (
     LAMLDataset,
@@ -23,7 +28,8 @@ from lightautoml.dataset.base import (
     array_attr_roles,
 )
 from lightautoml.dataset.np_pd_dataset import PandasDataset, NumpyDataset, NpRoles
-from lightautoml.dataset.roles import ColumnRole, NumericRole, DropRole
+from lightautoml.dataset.roles import ColumnRole, NumericRole, DropRole, DatetimeRole, GroupRole, WeightsRole, \
+    FoldsRole, PathRole, TreatmentRole, DateRole
 from lightautoml.tasks import Task
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql import functions as sf, Column
@@ -55,6 +61,55 @@ class Unpersistable(ABC):
     """
     def unpersist(self):
         ...
+
+
+class ColumnRolesJsonEncoder(JSONEncoder):
+    def default(self, o: Any) -> Any:
+        if not isinstance(o, ColumnRole):
+            raise ValueError(f"Cannot handle object which is not a ColumRole. Object type: {type(o)}")
+
+        dct = deepcopy(o.__dict__)
+        dct["__type__"] = ".".join([type(o).__module__, type(o).__name__])
+        dct['dtype'] = o.dtype.__name__
+
+        if isinstance(o, DatetimeRole):
+            dct['date_format'] = dct['format']
+            del dct['format']
+            dct['origin'] = o.origin.timestamp() if isinstance(o.origin, datetime) else o.origin
+
+        return dct
+
+
+class ColumnRolesJsonDecoder(JSONDecoder):
+    @staticmethod
+    def _column_roles_object_hook(json_object):
+        if "__type__" in json_object:
+            components = json_object["__type__"].split(".")
+            module_name = ".".join(components[:-1])
+            class_name = components[-1]
+            module = importlib.import_module(module_name)
+            clazz = getattr(module, class_name)
+
+            del json_object["__type__"]
+            if clazz in [DatetimeRole, DateRole]:
+                json_object["seasonality"] = tuple(json_object["seasonality"])
+                if isinstance(json_object["origin"], float):
+                    json_object["origin"] = datetime.fromtimestamp(json_object["origin"])
+
+            json_object["dtype"] = getattr(np, json_object["dtype"])
+
+            if clazz in [GroupRole, DropRole, WeightsRole, FoldsRole, PathRole, TreatmentRole]:
+                del json_object["dtype"]
+
+            instance = clazz(**json_object)
+
+            return instance
+
+        return json_object
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("object_hook", self._column_roles_object_hook)
+        super().__init__(**kwargs)
 
 
 class SparkDataset(LAMLDataset, Unpersistable):
@@ -92,7 +147,7 @@ class SparkDataset(LAMLDataset, Unpersistable):
 
         # reading metadata
         metadata_df = spark.read.format(file_format).options(**file_format_options).load(metadata_file_path)
-        metadata = pickle.loads(metadata_df.select('metadata').first().asDict()['metadata'])
+        metadata = json.loads(metadata_df.select('metadata').first().asDict()['metadata'], cls=ColumnRolesJsonDecoder)
 
         # reading data
         data_df = spark.read.format(file_format).options(**file_format_options).load(file_path)
@@ -505,7 +560,11 @@ class SparkDataset(LAMLDataset, Unpersistable):
         ds.set_data(self.data, self.features, self.roles, frozen=True)
         return ds
 
-    def save(self, path: str, save_mode: str = 'error', file_format: str = 'parquet', file_format_options: Optional[Dict[str, Any]] = None):
+    def save(self,
+             path: str,
+             save_mode: str = 'error',
+             file_format: str = 'parquet',
+             file_format_options: Optional[Dict[str, Any]] = None):
         metadata_file_path = os.path.join(path, f"metadata.{file_format}")
         file_path = os.path.join(path, f"data.{file_format}")
         file_format_options = file_format_options or dict()
@@ -514,11 +573,11 @@ class SparkDataset(LAMLDataset, Unpersistable):
         metadata = {
             "name": self.name,
             "roles": self.roles,
-            "task": self.task,
+            "task": self.task.__dict__,
             "target": self.target_column,
             "folds": self.folds_column,
         }
-        metadata_str = pickle.dumps(metadata)
+        metadata_str = json.dumps(metadata, cls=ColumnRolesJsonEncoder)
         metadata_df = self.spark_session.createDataFrame([{"metadata": metadata_str}])
 
         # create directory that will store data and metadata as separate files of dataframes
@@ -528,7 +587,16 @@ class SparkDataset(LAMLDataset, Unpersistable):
         metadata_df.write.format(file_format).mode(save_mode).options(**file_format_options).save(metadata_file_path)
         # fix name of columns: parquet cannot have columns with '(' or ')' in the name
         name_fixed_cols = (sf.col(c).alias(c.replace('(', '[').replace(')', ']')) for c in self.data.columns)
-        self.data.select(*name_fixed_cols).write.format(file_format).mode(save_mode).options(**file_format_options).save(file_path)
+        # write dataframe with fixed column names
+        (
+            self.data
+            .select(*name_fixed_cols)
+            .write
+            .format(file_format)
+            .mode(save_mode)
+            .options(**file_format_options)
+            .save(file_path)
+        )
 
     def to_pandas(self) -> PandasDataset:
         data, target_data, folds_data, roles = self._materialize_to_pandas()
