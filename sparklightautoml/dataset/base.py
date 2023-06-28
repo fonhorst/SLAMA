@@ -36,7 +36,6 @@ from pyspark.sql.session import SparkSession
 
 from sparklightautoml import VALIDATION_COLUMN
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
-from sparklightautoml.tasks.base import SparkTask
 from sparklightautoml.utils import SparkDataFrame, create_directory, get_current_session
 
 logger = logging.getLogger(__name__)
@@ -77,13 +76,16 @@ class SparkDatasetMetadataJsonEncoder(JSONEncoder):
 
             return dct
 
+        from sparklightautoml.tasks.base import SparkTask
+
         if isinstance(o, SparkTask):
             dct = {
                 "__type__": type(o).__name__,
-                "name":o.name,
+                "name": o.name,
                 "loss": o.loss_name,
                 "metric": o.metric_name,
-                "greater_is_better": o.greater_is_better
+                # convert to python bool from numpy.bool_
+                "greater_is_better": True if o.greater_is_better else False
             }
 
             return dct
@@ -94,9 +96,11 @@ class SparkDatasetMetadataJsonEncoder(JSONEncoder):
 class SparkDatasetMetadataJsonDecoder(JSONDecoder):
     @staticmethod
     def _column_roles_object_hook(json_object):
-        if "__type__" in json_object and "__type__" == "SparkTask":
+        from sparklightautoml.tasks.base import SparkTask
+        if json_object.get("__type__", None) == "SparkTask":
             del json_object["__type__"]
             return SparkTask(**json_object)
+
         if "__type__" in json_object:
             components = json_object["__type__"].split(".")
             module_name = ".".join(components[:-1])
@@ -587,7 +591,7 @@ class SparkDataset(LAMLDataset, Unpersistable):
         metadata = {
             "name": self.name,
             "roles": self.roles,
-            "task": self.task.__dict__,
+            "task": self.task,
             "target": self.target_column,
             "folds": self.folds_column,
         }

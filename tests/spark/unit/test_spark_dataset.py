@@ -65,7 +65,11 @@ def test_spark_task_json_encoder_decoder():
     js_stask = json.dumps(stask, cls=SparkDatasetMetadataJsonEncoder)
     deser_stask = json.loads(js_stask, cls=SparkDatasetMetadataJsonDecoder)
 
-    assert deser_stask == stask
+    stask_internals = [stask.name, stask.loss_name, stask.metric_name, stask.greater_is_better]
+    deser_stask_internals = [deser_stask.name, deser_stask.loss_name,
+                             deser_stask.metric_name, deser_stask.greater_is_better]
+
+    assert deser_stask_internals == stask_internals
 
 
 def test_spark_dataset_save_load(spark: SparkSession):
