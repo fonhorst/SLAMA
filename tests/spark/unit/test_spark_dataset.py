@@ -11,7 +11,7 @@ from lightautoml.tasks import Task
 from pandas.testing import assert_frame_equal
 from pyspark.sql import SparkSession
 
-from sparklightautoml.dataset.base import SparkDataset, ColumnRolesJsonEncoder, ColumnRolesJsonDecoder
+from sparklightautoml.dataset.base import SparkDataset, SparkDatasetMetadataJsonEncoder, SparkDatasetMetadataJsonDecoder
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
 from sparklightautoml.tasks.base import SparkTask
 from . import spark as spark_sess
@@ -53,10 +53,19 @@ def test_column_roles_json_encoder_and_decoder():
         "treatment_role": TreatmentRole()
     }
 
-    js_roles = json.dumps(roles, cls=ColumnRolesJsonEncoder)
-    deser_roles = json.loads(js_roles, cls=ColumnRolesJsonDecoder)
+    js_roles = json.dumps(roles, cls=SparkDatasetMetadataJsonEncoder)
+    deser_roles = json.loads(js_roles, cls=SparkDatasetMetadataJsonDecoder)
 
     assert deser_roles == roles
+
+
+def test_spark_task_json_encoder_decoder():
+    stask = SparkTask("binary")
+
+    js_stask = json.dumps(stask, cls=SparkDatasetMetadataJsonEncoder)
+    deser_stask = json.loads(js_stask, cls=SparkDatasetMetadataJsonDecoder)
+
+    assert deser_stask == stask
 
 
 def test_spark_dataset_save_load(spark: SparkSession):

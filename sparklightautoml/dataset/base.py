@@ -3,7 +3,6 @@ import importlib
 import json
 import logging
 import os
-import pickle
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -37,6 +36,7 @@ from pyspark.sql.session import SparkSession
 
 from sparklightautoml import VALIDATION_COLUMN
 from sparklightautoml.dataset.roles import NumericVectorOrArrayRole
+from sparklightautoml.tasks.base import SparkTask
 from sparklightautoml.utils import SparkDataFrame, create_directory, get_current_session
 
 logger = logging.getLogger(__name__)
@@ -63,26 +63,40 @@ class Unpersistable(ABC):
         ...
 
 
-class ColumnRolesJsonEncoder(JSONEncoder):
+class SparkDatasetMetadataJsonEncoder(JSONEncoder):
     def default(self, o: Any) -> Any:
-        if not isinstance(o, ColumnRole):
-            raise ValueError(f"Cannot handle object which is not a ColumRole. Object type: {type(o)}")
+        if isinstance(o, ColumnRole):
+            dct = deepcopy(o.__dict__)
+            dct["__type__"] = ".".join([type(o).__module__, type(o).__name__])
+            dct['dtype'] = o.dtype.__name__
 
-        dct = deepcopy(o.__dict__)
-        dct["__type__"] = ".".join([type(o).__module__, type(o).__name__])
-        dct['dtype'] = o.dtype.__name__
+            if isinstance(o, DatetimeRole):
+                dct['date_format'] = dct['format']
+                del dct['format']
+                dct['origin'] = o.origin.timestamp() if isinstance(o.origin, datetime) else o.origin
 
-        if isinstance(o, DatetimeRole):
-            dct['date_format'] = dct['format']
-            del dct['format']
-            dct['origin'] = o.origin.timestamp() if isinstance(o.origin, datetime) else o.origin
+            return dct
 
-        return dct
+        if isinstance(o, SparkTask):
+            dct = {
+                "__type__": type(o).__name__,
+                "name":o.name,
+                "loss": o.loss_name,
+                "metric": o.metric_name,
+                "greater_is_better": o.greater_is_better
+            }
+
+            return dct
+
+        raise ValueError(f"Cannot handle object which is not a ColumRole. Object type: {type(o)}")
 
 
-class ColumnRolesJsonDecoder(JSONDecoder):
+class SparkDatasetMetadataJsonDecoder(JSONDecoder):
     @staticmethod
     def _column_roles_object_hook(json_object):
+        if "__type__" in json_object and "__type__" == "SparkTask":
+            del json_object["__type__"]
+            return SparkTask(**json_object)
         if "__type__" in json_object:
             components = json_object["__type__"].split(".")
             module_name = ".".join(components[:-1])
@@ -147,7 +161,7 @@ class SparkDataset(LAMLDataset, Unpersistable):
 
         # reading metadata
         metadata_df = spark.read.format(file_format).options(**file_format_options).load(metadata_file_path)
-        metadata = json.loads(metadata_df.select('metadata').first().asDict()['metadata'], cls=ColumnRolesJsonDecoder)
+        metadata = json.loads(metadata_df.select('metadata').first().asDict()['metadata'], cls=SparkDatasetMetadataJsonDecoder)
 
         # reading data
         data_df = spark.read.format(file_format).options(**file_format_options).load(file_path)
@@ -577,7 +591,7 @@ class SparkDataset(LAMLDataset, Unpersistable):
             "target": self.target_column,
             "folds": self.folds_column,
         }
-        metadata_str = json.dumps(metadata, cls=ColumnRolesJsonEncoder)
+        metadata_str = json.dumps(metadata, cls=SparkDatasetMetadataJsonEncoder)
         metadata_df = self.spark_session.createDataFrame([{"metadata": metadata_str}])
 
         # create directory that will store data and metadata as separate files of dataframes
