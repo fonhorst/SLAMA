@@ -1,5 +1,7 @@
 import functools
 import logging
+import random
+import time
 import warnings
 from copy import copy
 from typing import Dict, Optional, Tuple, Union, cast, List, Any
@@ -424,6 +426,10 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
                 handleInvalid="keep"
             )
 
+        # assign a random port to decrease chances of allocating the same port from multiple instances
+        rand = random.Random(time.time_ns())
+        random_port = rand.randint(10_000, 50_000)
+
         run_params = {
             'featuresCol': self._assembler.getOutputCol(),
             'labelCol': train.target_column,
@@ -433,6 +439,7 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
             'useBarrierExecutionMode': self._use_barrier_execution_mode,
             'isProvideTrainingMetric': True,
             'chunkSize': self._chunk_size,
+            'defaultListenPort': random_port,
             **params,
             **({'alpha': 0.5, 'lambdaL1': 0.0, 'lambdaL2': 0.0} if train.task.name == "reg" else dict())
         }
