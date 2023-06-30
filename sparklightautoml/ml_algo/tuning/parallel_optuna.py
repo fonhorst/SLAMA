@@ -149,7 +149,7 @@ class ParallelOptunaTuner(OptunaTuner):
                 assert slot.dataset is not None
                 _ml_algo = deepcopy(ml_algo)
                 _ml_algo.computations_manager = SequentialComputationsManager(
-                    num_tasks=slot.num_threads,
+                    num_tasks=slot.num_tasks,
                     num_threads_per_executor=slot.num_threads_per_executor
                 )
                 tv_iter = deecopy_tviter_without_dataset(train_valid_iterator)

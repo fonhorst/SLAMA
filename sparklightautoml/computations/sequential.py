@@ -49,4 +49,8 @@ class SequentialComputationsManager(ComputationsManager):
         return 1
 
     def session(self, dataset: Optional[SparkDataset] = None) -> SequentialComputationsSession:
-        return SequentialComputationsSession(dataset)
+        return SequentialComputationsSession(
+            dataset,
+            num_tasks=self._num_tasks,
+            num_threads_per_executor=self._num_threads_per_executor
+        )
