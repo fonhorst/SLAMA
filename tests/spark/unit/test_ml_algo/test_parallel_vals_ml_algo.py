@@ -1,24 +1,14 @@
-from typing import cast, Callable
-
-import numpy as np
-import pytest
-from lightautoml.dataset.base import RolesDict
+from lightautoml.utils.timer import PipelineTimer
 from pyspark.sql import SparkSession
 
-from sparklightautoml.dataset.persistence import PlainCachePersistenceManager
-from sparklightautoml.ml_algo.base import SparkTabularMLAlgo
+from sparklightautoml.computations.parallel import ParallelComputationsManager
+from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
-from sparklightautoml.ml_algo.linear_pyspark import SparkLinearLBFGS
-from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
-from sparklightautoml.pipelines.features.lgb_pipeline import SparkLGBSimpleFeatures
-from sparklightautoml.pipelines.features.linear_pipeline import SparkLinearFeatures
-from sparklightautoml.reader.base import SparkToSparkReader
-from sparklightautoml.tasks.base import SparkTask
 from sparklightautoml.validation.iterators import SparkFoldsIterator
-from .. import spark as spark_sess
-from ..dataset_utils import get_test_datasets
+from .. import spark as spark_sess, dataset as spark_dataset
 
 spark = spark_sess
+dataset = spark_dataset
 
 ml_alg_kwargs = {
     'auto_unique_co': 10,
@@ -29,9 +19,19 @@ ml_alg_kwargs = {
 }
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-def test_parallel_timer_exceeded(spark: SparkSession):
-    # TODO: PARALLEL - check for correct handling of the situation when timer is execeeded
-    # 1. after the first fold (parallelism=1)
-    # 2. after several folds (parallelism > 1)
-    pass
+def test_parallel_timer_exceeded(spark: SparkSession, dataset: SparkDataset):
+    """
+    Only two folds of five can be computed under conditions provided to the timer.
+    The code should not raise any exception.
+    """
+    pipeline_timer = PipelineTimer(timeout=2)
+    pipeline_timer.start()
+
+    tv_iter = SparkFoldsIterator(dataset)
+    ml_algo = SparkBoostLGBM(
+        timer=pipeline_timer.get_task_timer(),
+        computations_settings=ParallelComputationsManager(parallelism=2)
+    )
+    oof_preds = ml_algo.fit_predict(tv_iter)
+
+    oof_preds.data.write.mode("overwrite").format("noop").save()
