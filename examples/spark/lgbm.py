@@ -41,6 +41,14 @@ def main():
 
     # feats = ['FLAG_DOCUMENT_18', 'FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_3', 'FLAG_DOCUMENT_5', 'FLAG_DOCUMENT_6']
 
+
+    # good
+    # feats = ['AMT_ANNUITY', 'AMT_CREDIT', 'AMT_INCOME_TOTAL', 'CNT_CHILDREN', 'CNT_FAM_MEMBERS', 'DAYS_BIRTH', 'DAYS_EMPLOYED', 'DAYS_ID_PUBLISH']
+    # good
+    # feats = ['DAYS_LAST_PHONE_CHANGE', 'DAYS_REGISTRATION', 'FLAG_CONT_MOBILE', 'FLAG_DOCUMENT_11', 'FLAG_DOCUMENT_13', 'FLAG_DOCUMENT_14', 'FLAG_DOCUMENT_16', 'FLAG_DOCUMENT_18']
+    # bad
+    feats = ['FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_3', 'FLAG_DOCUMENT_5', 'FLAG_DOCUMENT_6', 'FLAG_DOCUMENT_8', 'FLAG_DOCUMENT_9', 'FLAG_EMAIL', 'FLAG_EMP_PHONE']
+
     for _ in range(1):
         for i, feature_cols in enumerate(splits(feats, count=1)):
             print(f"Id: {i} NUM FEATS: {len(feature_cols)} FEATURE COLS: {feature_cols}")
@@ -93,7 +101,7 @@ def main():
 
 
 if __name__ == "__main__":
-    attempts_count = 10
+    attempts_count = 1
     failed_attempts = 0
     for attempt_id in range(attempts_count):
         failed = False
