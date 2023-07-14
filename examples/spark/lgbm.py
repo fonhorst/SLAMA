@@ -53,9 +53,15 @@ def main():
         for i, feature_cols in enumerate(splits(feats, count=1)):
             print(f"Id: {i} NUM FEATS: {len(feature_cols)} FEATURE COLS: {feature_cols}")
 
-            featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="error")
+            train.select(feature_cols).printSchema()
+
+            featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="keep")
             train_data = featurizer.transform(train)[ds.target_column, "features"]
             test_data = featurizer.transform(test)[ds.target_column, "features"]
+
+            print("===============================")
+
+            train_data.printSchema()
 
             # df = (
             #     spark.read.format("csv")
