@@ -1,3 +1,6 @@
+import math
+from typing import List
+
 from examples_utils import get_spark_session
 from synapse.ml.lightgbm import LightGBMClassifier
 from pyspark.ml.feature import VectorAssembler
@@ -24,50 +27,59 @@ def main():
 
     train, test = ds.data.randomSplit([0.85, 0.15], seed=1)
 
-    feature_cols = ds.features
-    featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="error")
-    train_data = featurizer.transform(train)[ds.target_column, "features"]
-    test_data = featurizer.transform(test)[ds.target_column, "features"]
+    feats = list(sorted(ds.features))
 
-    # df = (
-    #     spark.read.format("csv")
-    #         .option("header", True)
-    #         .option("inferSchema", True)
-    #         .load(
-    #         "file:///opt/spark_data/company_bancruptacy_prediction.csv"
-    #     )
-    # )
-    #
-    # train, test = df.randomSplit([0.85, 0.15], seed=1)
-    #
-    # feature_cols = df.columns[1:]
-    # featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features")
-    # train_data = featurizer.transform(train)["Bankrupt?", "features"]
-    # test_data = featurizer.transform(test)["Bankrupt?", "features"]
+    def splits(features: List[str], count: int):
+        elts_per_split = math.ceil(len(features) / count)
+        for i in range(count):
+            yield features[i * elts_per_split: (i + 1) * elts_per_split]
 
-    model = LightGBMClassifier(
-        objective="binary",
-        featuresCol="features",
-        labelCol=ds.target_column,
-        isUnbalance=True,
-        executionMode="streaming",
-        isProvideTrainingMetric=True,
-        verbosity=1
-    )
+    for i, feature_cols in enumerate(splits(feats, count=16)):
+        print(f"Id: {i} NUM FEATS: {len(feature_cols)} FEATURE COLS: {feature_cols}")
 
-    model = model.fit(train_data)
+        featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="error")
+        train_data = featurizer.transform(train)[ds.target_column, "features"]
+        test_data = featurizer.transform(test)[ds.target_column, "features"]
 
-    predictions = model.transform(test_data)
+        # df = (
+        #     spark.read.format("csv")
+        #         .option("header", True)
+        #         .option("inferSchema", True)
+        #         .load(
+        #         "file:///opt/spark_data/company_bancruptacy_prediction.csv"
+        #     )
+        # )
+        #
+        # train, test = df.randomSplit([0.85, 0.15], seed=1)
+        #
+        # feature_cols = df.columns[1:]
+        # featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features")
+        # train_data = featurizer.transform(train)["Bankrupt?", "features"]
+        # test_data = featurizer.transform(test)["Bankrupt?", "features"]
 
-    metrics = ComputeModelStatistics(
-        evaluationMetric="classification",
-        labelCol=ds.target_column,
-        scoredLabelsCol="prediction",
-    ).transform(predictions)
+        model = LightGBMClassifier(
+            objective="binary",
+            featuresCol="features",
+            labelCol=ds.target_column,
+            isUnbalance=True,
+            executionMode="streaming",
+            isProvideTrainingMetric=True,
+            verbosity=1
+        )
 
-    metrics_df = metrics.toPandas()
+        model = model.fit(train_data)
 
-    print(metrics_df.head(10))
+        predictions = model.transform(test_data)
+
+        metrics = ComputeModelStatistics(
+            evaluationMetric="classification",
+            labelCol=ds.target_column,
+            scoredLabelsCol="prediction",
+        ).transform(predictions)
+
+        metrics_df = metrics.toPandas()
+
+        print(metrics_df.head(10))
 
     spark.stop()
 
