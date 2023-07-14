@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
         iterator = SparkFoldsIterator(sdataset).convert_to_holdout_iterator()
 
-        spark_ml_algo = SparkBoostLGBM(freeze_defaults=False)
+        spark_ml_algo = SparkBoostLGBM(freeze_defaults=False, execution_mode="streaming")
         spark_features_pipeline = SparkLGBSimpleFeatures()
 
         ml_pipe = SparkMLPipeline(

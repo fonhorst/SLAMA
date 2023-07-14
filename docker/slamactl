@@ -3,14 +3,19 @@
 set -ex
 
 function build() {
-  poetry build
+#  poetry build
 
-  docker build -t slama:latest -f docker/spark-lama.dockerfile .
+  docker build -t slama-local:latest -f docker/spark-lama.dockerfile .
 }
 
 function run() {
-  docker run -it slama:latest examples/spark/tabular-preset-automl.py
+  docker run -it slama-local:latest examples/spark/tabular-preset-automl.py
 }
+
+function run_lgbm() {
+  docker run -it slama-local:latest examples/spark/lgbm.py
+}
+
 
 function help() {
   echo "
@@ -43,6 +48,10 @@ function main () {
 
     "run")
         run
+        ;;
+
+    "run-lgbm")
+        run_lgbm
         ;;
 
     "help")

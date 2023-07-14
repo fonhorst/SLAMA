@@ -228,6 +228,9 @@ class SparkBoostLGBM(SparkTabularMLAlgo, ImportanceEstimator):
         if 'num_threads' in runtime_settings:
             params["numThreads"] = runtime_settings['num_threads']
 
+        if "numThreads" in params:
+            del params["numThreads"]
+
         return params, verbose_eval
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
