@@ -32,4 +32,4 @@ if __name__ == "__main__":
     ds = feature_pipe.fit_transform(ds)
 
     # save processed data
-    ds.save(f"/tmp/{dataset_name}__{feat_pipe}__features.dataset", save_mode='overwrite')
+    ds.save(f"/opt/spark_data/preproccessed_datasets/{dataset_name}__{feat_pipe}__features.dataset", save_mode='overwrite')
