@@ -25,7 +25,12 @@ def main():
     good_feats = list(set(ds.features).difference(set(nan_feats.keys())))
     ds = ds[:, good_feats]
 
-    train, test = ds.data.randomSplit([0.85, 0.15], seed=1)
+    df = ds.data.cache()
+    df.write.format("noop").mode("overwrite").save()
+
+    train, test = ds.data.randomSplit([0.85, 0.15], seed=42)
+    # train = ds.data
+    # test = train
 
     feats = list(sorted(ds.features))
 
@@ -34,55 +39,68 @@ def main():
         for i in range(count):
             yield features[i * elts_per_split: (i + 1) * elts_per_split]
 
-    for i, feature_cols in enumerate(splits(feats, count=16)):
-        print(f"Id: {i} NUM FEATS: {len(feature_cols)} FEATURE COLS: {feature_cols}")
+    # feats = ['FLAG_DOCUMENT_18', 'FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_3', 'FLAG_DOCUMENT_5', 'FLAG_DOCUMENT_6']
 
-        featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="error")
-        train_data = featurizer.transform(train)[ds.target_column, "features"]
-        test_data = featurizer.transform(test)[ds.target_column, "features"]
+    for _ in range(1):
+        for i, feature_cols in enumerate(splits(feats, count=1)):
+            print(f"Id: {i} NUM FEATS: {len(feature_cols)} FEATURE COLS: {feature_cols}")
 
-        # df = (
-        #     spark.read.format("csv")
-        #         .option("header", True)
-        #         .option("inferSchema", True)
-        #         .load(
-        #         "file:///opt/spark_data/company_bancruptacy_prediction.csv"
-        #     )
-        # )
-        #
-        # train, test = df.randomSplit([0.85, 0.15], seed=1)
-        #
-        # feature_cols = df.columns[1:]
-        # featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features")
-        # train_data = featurizer.transform(train)["Bankrupt?", "features"]
-        # test_data = featurizer.transform(test)["Bankrupt?", "features"]
+            featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="error")
+            train_data = featurizer.transform(train)[ds.target_column, "features"]
+            test_data = featurizer.transform(test)[ds.target_column, "features"]
 
-        model = LightGBMClassifier(
-            objective="binary",
-            featuresCol="features",
-            labelCol=ds.target_column,
-            isUnbalance=True,
-            executionMode="streaming",
-            isProvideTrainingMetric=True,
-            verbosity=1
-        )
+            # df = (
+            #     spark.read.format("csv")
+            #         .option("header", True)
+            #         .option("inferSchema", True)
+            #         .load(
+            #         "file:///opt/spark_data/company_bancruptacy_prediction.csv"
+            #     )
+            # )
+            #
+            # train, test = df.randomSplit([0.85, 0.15], seed=1)
+            #
+            # feature_cols = df.columns[1:]
+            # featurizer = VectorAssembler(inputCols=feature_cols, outputCol="features")
+            # train_data = featurizer.transform(train)["Bankrupt?", "features"]
+            # test_data = featurizer.transform(test)["Bankrupt?", "features"]
 
-        model = model.fit(train_data)
+            model = LightGBMClassifier(
+                objective="binary",
+                featuresCol="features",
+                labelCol=ds.target_column,
+                isUnbalance=True,
+                executionMode="streaming",
+                isProvideTrainingMetric=True,
+                verbosity=1
+            )
 
-        predictions = model.transform(test_data)
+            model = model.fit(train_data)
 
-        metrics = ComputeModelStatistics(
-            evaluationMetric="classification",
-            labelCol=ds.target_column,
-            scoredLabelsCol="prediction",
-        ).transform(predictions)
+            predictions = model.transform(test_data)
 
-        metrics_df = metrics.toPandas()
+            metrics = ComputeModelStatistics(
+                evaluationMetric="classification",
+                labelCol=ds.target_column,
+                scoredLabelsCol="prediction",
+            ).transform(predictions)
 
-        print(metrics_df.head(10))
+            metrics_df = metrics.toPandas()
+
+            print(metrics_df.head(10))
 
     spark.stop()
 
 
 if __name__ == "__main__":
-    main()
+    attempts_count = 10
+    failed_attempts = 0
+    for attempt_id in range(attempts_count):
+        failed = False
+        try:
+            main()
+        except:
+            failed = True
+            failed_attempts += 1
+
+    print(f"STATISTICS: {(attempts_count - failed_attempts)}/{attempts_count} successful attempts")
