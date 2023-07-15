@@ -20,10 +20,10 @@ def main():
         partitions_num=4
     )
 
-    row = ds.data.select(*[sf.sum(sf.isnan(f).astype("int")).alias(f) for f in ds.features]).first()
-    nan_feats = {feat: count for feat, count in row.asDict().items() if count > 0}
-    good_feats = list(set(ds.features).difference(set(nan_feats.keys())))
-    ds = ds[:, good_feats]
+    # row = ds.data.select(*[sf.sum(sf.isnan(f).astype("int")).alias(f) for f in ds.features]).first()
+    # nan_feats = {feat: count for feat, count in row.asDict().items() if count > 0}
+    # good_feats = list(set(ds.features).difference(set(nan_feats.keys())))
+    # ds = ds[:, good_feats]
 
     df = ds.data.cache()
     df.write.format("noop").mode("overwrite").save()
@@ -47,7 +47,7 @@ def main():
     # good
     # feats = ['DAYS_LAST_PHONE_CHANGE', 'DAYS_REGISTRATION', 'FLAG_CONT_MOBILE', 'FLAG_DOCUMENT_11', 'FLAG_DOCUMENT_13', 'FLAG_DOCUMENT_14', 'FLAG_DOCUMENT_16', 'FLAG_DOCUMENT_18']
     # bad
-    feats = ['FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_3', 'FLAG_DOCUMENT_5', 'FLAG_DOCUMENT_6', 'FLAG_DOCUMENT_8', 'FLAG_DOCUMENT_9', 'FLAG_EMAIL', 'FLAG_EMP_PHONE']
+    # feats = ['FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_3', 'FLAG_DOCUMENT_5', 'FLAG_DOCUMENT_6', 'FLAG_DOCUMENT_8', 'FLAG_DOCUMENT_9', 'FLAG_EMAIL', 'FLAG_EMP_PHONE']
 
     for _ in range(1):
         for i, feature_cols in enumerate(splits(feats, count=1)):

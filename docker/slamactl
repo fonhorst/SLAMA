@@ -5,11 +5,11 @@ set -ex
 function build() {
 #  poetry build
 
-  docker build -t slama-local:latest -f docker/spark-lama.dockerfile .
+  docker build -t node2.bdcl:5000/slama-local:latest -f docker/spark-lama.dockerfile .
 }
 
 function run() {
-  docker run -it slama-local:latest examples/spark/tabular-preset-automl.py
+  docker run -it node2.bdcl:5000/slama-local:latest examples/spark/tabular-preset-automl.py
 }
 
 function run_lgbm() {
