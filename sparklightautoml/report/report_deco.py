@@ -1168,7 +1168,7 @@ class SparkReportDeco:
 
     def _get_column_nan_ratio(self, column: Column, column_name: str, total_count: int) -> Column:
         return (
-                sf.sum(sf.when(sf.isnan(column), 1).otherwise(sf.when(sf.isnull(column), 1).otherwise(0))) / total_count
+            sf.sum(sf.when(sf.isnan(column), 1).otherwise(sf.when(sf.isnull(column), 1).otherwise(0))) / total_count
         ).alias(
             f"nanratio_{column_name}"
         )  # column._jc.toString()
@@ -1325,12 +1325,12 @@ class SparkReportDeco:
             dropped_nan_ratio = train_data.select(
                 *[
                     (
-                            sf.sum(
+                        sf.sum(
                             sf.when(sf.isnan(sf.col(col_name)), 1).otherwise(
                                 sf.when(sf.isnull(sf.col(col_name)), 1).otherwise(0)
                             )
                         )
-                            / total_count
+                        / total_count
                     ).alias(col_name)
                     for col_name in dropped_list
                 ]
