@@ -14,15 +14,13 @@ from lightautoml.transformers.categorical import LabelEncoder, FreqEncoder, Ordi
 from pyspark.ml import PipelineModel
 from pyspark.sql import SparkSession
 
-from sparklightautoml.pipelines.features.base import SparkNoOpTransformer
 from sparklightautoml.transformers.categorical import SparkLabelEncoderEstimator, SparkFreqEncoderEstimator, \
     SparkOrdinalEncoderEstimator, SparkCatIntersectionsEstimator, SparkTargetEncoderEstimator, \
     SparkMulticlassTargetEncoderEstimator, SparkFreqEncoderTransformer
-from sparklightautoml.transformers.scala_wrappers.laml_string_indexer import LAMLStringIndexerModel
 from sparklightautoml.transformers.scala_wrappers.target_encoder_transformer import TargetEncoderTransformer, \
     SparkTargetEncodeTransformer
 from sparklightautoml.utils import SparkDataFrame, WrappingSelectingPipelineModel
-from .. import DatasetForTest, compare_sparkml_by_content, spark as spark_sess, compare_sparkml_by_metadata, workdir
+from .. import DatasetForTest, compare_sparkml_by_content, spark as spark_sess, compare_sparkml_by_metadata
 from ..dataset_utils import get_test_datasets
 from ..test_auto_ml.utils import FakeOpTransformer
 
@@ -80,7 +78,7 @@ def test_freq_encoder(spark: SparkSession, workdir: str, dataset: DatasetForTest
 
     te_path = os.path.join(workdir, "scala_te.transformer")
     tet.save(te_path)
-    tet_loaded = SparkFreqEncoderTransformer.load(te_path)
+    SparkFreqEncoderTransformer.load(te_path)
 
 
 # noinspection PyShadowingNames
@@ -152,15 +150,14 @@ def test_scala_target_encoder_transformer(spark: SparkSession, workdir: str):
     input_cols = ["a", "b", "c"]
     output_cols = [f"te_{col}" for col in input_cols]
     in_cols = ["id", fold_column, "some_other_col", *input_cols]
-    out_cols = [*in_cols, *output_cols]
+    # out_cols = [*in_cols, *output_cols]
 
     def make_df(data: List[List[float]]) -> SparkDataFrame:
-        # schema = StructType(fields=[StructField(col, IntegerType()) for col in in_cols])
         df_data = [
             {col: val for col, val in zip(in_cols, row)}
             for row in data
         ]
-        return spark.createDataFrame(df_data)#, schema=schema)
+        return spark.createDataFrame(df_data)
 
     data = [
         [0, 0, 42, 1, 1, 1],

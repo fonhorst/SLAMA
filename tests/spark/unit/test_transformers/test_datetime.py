@@ -101,7 +101,7 @@ def test_time_to_num(spark: SparkSession, dataset: DatasetForTest):
 def test_base_diff(spark: SparkSession, dataset: DatasetForTest):
 
     columns: List[str] = dataset.dataset.columns
-    middle = int(len(columns)/2)
+    middle = int(len(columns) / 2)
     base_names = columns[:middle]
     diff_names = columns[middle:]
 

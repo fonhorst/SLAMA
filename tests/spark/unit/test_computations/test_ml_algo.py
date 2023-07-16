@@ -21,7 +21,7 @@ dataset = spark_dataset
 
 parallel_manager_configs = [
     ParallelComputationsManager(parallelism=parallelism, use_location_prefs_mode=use_location_prefs_mode)
-    for parallelism, use_location_prefs_mode  in itertools.product([1, 2, 5], [False, True])
+    for parallelism, use_location_prefs_mode in itertools.product([1, 2, 5], [False, True])
 ]
 
 manager_configs = [None, SequentialComputationsManager(), *parallel_manager_configs]

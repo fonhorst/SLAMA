@@ -1,5 +1,4 @@
 import logging.config
-import logging.config
 import os
 import random
 import shutil

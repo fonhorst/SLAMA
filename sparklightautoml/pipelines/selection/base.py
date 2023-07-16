@@ -1,7 +1,7 @@
 """Base class for selection pipelines."""
 from abc import ABC
 from copy import copy
-from typing import Any, Optional, List, cast
+from typing import Optional, List, cast
 
 from lightautoml.dataset.base import LAMLDataset, RolesDict
 from lightautoml.pipelines.selection.base import SelectionPipeline, EmptySelector, ImportanceEstimator, ComposedSelector
@@ -12,7 +12,7 @@ from pyspark.ml import Transformer
 from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.pipelines.base import TransformerInputOutputRoles
 from sparklightautoml.pipelines.features.base import SparkFeaturesPipeline
-from sparklightautoml.utils import ColumnsSelectorTransformer, NoOpTransformer
+from sparklightautoml.utils import NoOpTransformer
 from sparklightautoml.validation.base import SparkBaseTrainValidIterator, SparkSelectionPipeline
 
 
@@ -41,8 +41,8 @@ class SparkSelectionPipelineWrapper(SparkSelectionPipeline, TransformerInputOutp
             assert isinstance(selp, EmptySelector) \
                    or isinstance(selp, BugFixSelectionPipelineWrapper) \
                    or isinstance(selp.features_pipeline, SparkFeaturesPipeline), \
-                    "SelectionPipeline should either be EmptySelector or have SparkFeaturePipeline as " \
-                    "features_pipeline, but it is {type(selp)} and have {type(selp.features_pipeline)}"
+                f"SelectionPipeline should either be EmptySelector or have SparkFeaturePipeline as " \
+                f"features_pipeline, but it is {type(selp)} and have {type(selp.features_pipeline)}"
 
     def _build_transformer(self, *args, **kwargs) -> Optional[Transformer]:
         if not self._sel_pipe.is_fitted:
@@ -153,4 +153,3 @@ class BugFixSelectionPipelineWrapper(SelectionPipeline):
                     selected_features.append(col)
 
         return dataset[:, selected_features]
-

@@ -1,7 +1,6 @@
 import logging.config
 
 import pytest
-from pyspark.ml import PipelineModel
 from pyspark.sql import SparkSession
 
 from sparklightautoml.dataset.base import PersistenceManager, PersistenceLevel
