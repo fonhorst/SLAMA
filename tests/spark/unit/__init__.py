@@ -34,6 +34,7 @@ JAR_PATH = 'jars/spark-lightautoml_2.12-0.1.1.jar'
 PARTITIONS_NUM = 8
 BUCKET_NUMS = PARTITIONS_NUM
 TMP_SLAMA_DIR = "/tmp/slama_test_dir"
+TMP_SPARK_LOCAL_DIR = "/tmp/test_spark_local_dir"
 HDFS_TMP_SLAMA_DIR = TMP_SLAMA_DIR
 # TODO: SLAMA - should probably get hdfs settings from an external config
 HDFS_NAME_PORT = "node21.bdcl:9000"
@@ -46,8 +47,11 @@ set_stdout_level(verbosity_to_loglevel(verbosity=5))
 logger = logging.getLogger(__name__)
 
 
-def create_spark_session(warehouse_path: str):
+def create_spark_session(warehouse_path: str, spark_local_dir: str):
+    logger.info("Creating spark session")
     shutil.rmtree(warehouse_path, ignore_errors=True)
+
+    os.makedirs(spark_local_dir, exist_ok=True)
 
     spark = (
         SparkSession
@@ -66,6 +70,7 @@ def create_spark_session(warehouse_path: str):
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.autoBroadcastJoinThreshold", "-1")
         .config("spark.sql.warehouse.dir", warehouse_path)
+        .config("spark.local.dir", spark_local_dir)
         .getOrCreate()
     )
 
@@ -75,21 +80,22 @@ def create_spark_session(warehouse_path: str):
 
     yield spark
 
+    logger.info("Finishing spark session")
+
     spark.stop()
 
     shutil.rmtree(warehouse_path, ignore_errors=True)
+    shutil.rmtree(spark_local_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
 def spark() -> SparkSession:
-    for sess in create_spark_session(warehouse_path=TMP_SLAMA_DIR):
-        yield sess
+    yield from create_spark_session(warehouse_path=TMP_SLAMA_DIR, spark_local_dir=TMP_SPARK_LOCAL_DIR)
 
 
 @pytest.fixture(scope="function")
 def spark_for_function() -> SparkSession:
-    for sess in create_spark_session(warehouse_path=TMP_SLAMA_DIR):
-        yield sess
+    yield from create_spark_session(warehouse_path=TMP_SLAMA_DIR, spark_local_dir=TMP_SPARK_LOCAL_DIR)
 
 
 @pytest.fixture(scope="function")
