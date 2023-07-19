@@ -1,15 +1,12 @@
 import collections
 import itertools
-import logging
 from copy import deepcopy
 
 import pytest
-from lightautoml.utils.logging import verbosity_to_loglevel, set_stdout_level
 from pyspark.sql import SparkSession
 
 from sparklightautoml.computations.parallel import ParallelComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
-from sparklightautoml.utils import logging_config, VERBOSE_LOGGING_FORMAT
 from sparklightautoml.validation.iterators import SparkFoldsIterator
 from . import build_func, build_idx_func, build_func_with_exception, TestWorkerException, build_func_on_dataset, \
     build_fold_func

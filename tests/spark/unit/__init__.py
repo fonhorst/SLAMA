@@ -81,7 +81,7 @@ def create_spark_session(warehouse_path: str, spark_local_dir: str):
 
     yield spark
 
-    logger.info("Finishing spark session")
+    logger.warning("Finishing spark session")
 
     spark.stop()
 
