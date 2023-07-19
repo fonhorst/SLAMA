@@ -11,8 +11,9 @@ from pyspark.sql import SparkSession
 
 from sparklightautoml.transformers.datetime import SparkBaseDiffTransformer, SparkTimeToNumTransformer, \
     SparkDateSeasonsEstimator, SparkDateSeasonsTransformer
-from .. import DatasetForTest, compare_sparkml_by_content, spark as spark_sess, workdir as working_dir
+from .. import DatasetForTest, compare_sparkml_by_content, make_spark, spark as spark_sess, workdir as working_dir
 
+make_spark = make_spark
 spark = spark_sess
 workdir = working_dir
 

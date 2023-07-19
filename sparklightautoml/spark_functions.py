@@ -36,8 +36,6 @@ if parse(version('pyspark')) >= parse('3.1.0'):
     from pyspark.sql.functions import aggregate
     from pyspark.sql.functions import transform
 else:
-    from pyspark.sql.functions import countDistinct as count_distinct
-
     def _get_lambda_parameters(f):
         import inspect
 

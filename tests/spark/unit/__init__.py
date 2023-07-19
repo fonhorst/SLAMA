@@ -1,3 +1,4 @@
+import glob
 import logging.config
 import os
 import random
@@ -89,8 +90,15 @@ def create_spark_session(warehouse_path: str, spark_local_dir: str):
 
 
 @pytest.fixture(scope="session")
-def spark() -> SparkSession:
+def make_spark() -> SparkSession:
     yield from create_spark_session(warehouse_path=TMP_SLAMA_DIR, spark_local_dir=TMP_SPARK_LOCAL_DIR)
+
+
+@pytest.fixture(scope="function")
+def spark(make_spark: SparkSession) -> SparkSession:
+    for path in glob.glob('/tmp/mml-natives*'):
+        shutil.rmtree(path, ignore_errors=True)
+    yield make_spark
 
 
 @pytest.fixture(scope="function")

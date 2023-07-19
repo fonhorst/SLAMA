@@ -10,8 +10,9 @@ from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.validation.iterators import SparkFoldsIterator
 from . import build_func, build_idx_func, TestWorkerException, build_func_on_dataset, build_fold_func, \
     build_func_with_exception
-from .. import spark as spark_sess, dataset as spark_dataset
+from .. import make_spark, spark as spark_sess, dataset as spark_dataset
 
+make_spark = make_spark
 spark = spark_sess
 dataset = spark_dataset
 
