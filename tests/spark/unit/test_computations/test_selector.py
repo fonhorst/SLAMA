@@ -8,10 +8,9 @@ from sparklightautoml.dataset.base import SparkDataset
 from sparklightautoml.ml_algo.boost_lgbm import SparkBoostLGBM
 from sparklightautoml.pipelines.selection.permutation_importance_based import SparkNpPermutationImportanceEstimator
 from sparklightautoml.validation.iterators import SparkFoldsIterator
-from .. import make_spark, spark as spark_sess, dataset as spark_dataset
+from .. import dataset as spark_dataset, spark_for_function
 
-make_spark = make_spark
-spark = spark_sess
+spark = spark_for_function
 dataset = spark_dataset
 
 

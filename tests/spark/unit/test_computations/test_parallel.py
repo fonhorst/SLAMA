@@ -1,19 +1,21 @@
 import collections
 import itertools
+import logging
 from copy import deepcopy
 
 import pytest
+from lightautoml.utils.logging import verbosity_to_loglevel, set_stdout_level
 from pyspark.sql import SparkSession
 
 from sparklightautoml.computations.parallel import ParallelComputationsManager
 from sparklightautoml.dataset.base import SparkDataset
+from sparklightautoml.utils import logging_config, VERBOSE_LOGGING_FORMAT
 from sparklightautoml.validation.iterators import SparkFoldsIterator
 from . import build_func, build_idx_func, build_func_with_exception, TestWorkerException, build_func_on_dataset, \
     build_fold_func
-from .. import make_spark, spark as spark_sess, dataset as spark_dataset
+from .. import dataset as spark_dataset, spark_for_function
 
-make_spark = make_spark
-spark = spark_sess
+spark = spark_for_function
 dataset = spark_dataset
 
 K = 20
@@ -51,9 +53,9 @@ def test_allocate(spark: SparkSession, dataset: SparkDataset, parallelism: int, 
 
 
 @pytest.mark.parametrize("parallelism,use_location_prefs_mode", manager_configs)
-def test_compute(parallelism: int, use_location_prefs_mode: bool):
+def test_compute(spark: SparkSession, parallelism: int, use_location_prefs_mode: bool):
     acc = collections.deque()
-    tasks = [build_func(acc, i) for i in range(K)]
+    tasks = [build_func(acc, i, delay=0.25) for i in range(K)]
 
     manager = ParallelComputationsManager(parallelism, use_location_prefs_mode)
     results = manager.compute(tasks)

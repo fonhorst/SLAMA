@@ -3,10 +3,9 @@ import pytest
 from sparklightautoml.computations import parallel
 from sparklightautoml.computations.parallel import ParallelComputationsSession
 from sparklightautoml.dataset.base import SparkDataset
-from .. import make_spark, spark as spark_sess, dataset as spark_dataset
+from .. import dataset as spark_dataset, spark_for_function
 
-make_spark = make_spark
-spark = spark_sess
+spark = spark_for_function
 dataset = spark_dataset
 
 

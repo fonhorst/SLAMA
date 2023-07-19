@@ -20,10 +20,12 @@ from sparklightautoml.transformers.categorical import SparkLabelEncoderEstimator
 from sparklightautoml.transformers.scala_wrappers.target_encoder_transformer import TargetEncoderTransformer, \
     SparkTargetEncodeTransformer
 from sparklightautoml.utils import SparkDataFrame, WrappingSelectingPipelineModel
-from .. import DatasetForTest, compare_sparkml_by_content, make_spark, spark as spark_sess, compare_sparkml_by_metadata
+from .. import DatasetForTest, compare_sparkml_by_content, make_spark, spark as spark_sess, \
+    compare_sparkml_by_metadata, workdir
 from ..dataset_utils import get_test_datasets
 from ..test_auto_ml.utils import FakeOpTransformer
 
+workdir = workdir
 make_spark = make_spark
 spark = spark_sess
 
